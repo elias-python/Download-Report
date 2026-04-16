@@ -4,6 +4,7 @@ import time
 import os
 import shutil
 import json
+import subprocess
 from datetime import datetime
 import threading
 from tkinter import messagebox, filedialog
@@ -104,7 +105,7 @@ class StepBar(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Mosaic Atlas Vision")
+        self.title("Mosaic Atlas Vision v3.4")
         self.geometry("500x820")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
@@ -330,7 +331,7 @@ class App(ctk.CTk):
         self.log_text.tag_config("err", foreground=COR_ERROR)
         self.log_text.tag_config("suc", foreground=COR_SUCCESS)
 
-        self.adicionar_log("Sistema pronto. Aguardando configuração.")
+        self.adicionar_log("Sistema pronto. Aguardando início.")
 
     # ─────────────────────────────────────────────
     #  LOG
@@ -370,16 +371,30 @@ class App(ctk.CTk):
     # ─────────────────────────────────────────────
     #  AUTOMATION HELPERS
     # ─────────────────────────────────────────────
-    def clicar_img(self, img, desc, timeout=20, confidence=0.7, double=False):
+    def clicar_img(self, img, desc, timeout=20, confidence=0.7, double=False, click_type="standard"):
         self.adicionar_log(f"Buscando: {desc}")
         inicio = time.time()
         while time.time() - inicio < timeout:
             if not self.executando:
                 return False
             try:
-                pos = pyautogui.locateCenterOnScreen(img, confidence=confidence)
+                pos = None
+                # Region filtering para o botão Iniciar (metade inferior da tela)
+                if desc == "Botão Iniciar":
+                    screen_width, screen_height = pyautogui.size()
+                    search_region = (0, 0, screen_width // 2, screen_height // 2)
+                    pos = pyautogui.locateCenterOnScreen(img, confidence=confidence, region=search_region)
+                else:
+                    pos = pyautogui.locateCenterOnScreen(img, confidence=confidence)
+                
                 if pos:
-                    if double:
+                    if click_type == "force":
+                        pyautogui.moveTo(pos.x, pos.y, duration=0.2)
+                        pyautogui.mouseDown()
+                        time.sleep(0.1)
+                        pyautogui.mouseUp()
+                        time.sleep(0.3)
+                    elif double:
                         pyautogui.doubleClick(pos)
                     else:
                         pyautogui.click(pos)
@@ -387,9 +402,21 @@ class App(ctk.CTk):
                     return True
             except Exception:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.2)
         self.adicionar_log(f"Timeout: {desc} não encontrado.", "err")
         return False
+
+    def fechar_atlas(self):
+        """Fecha o processo do Atlas Browser."""
+        self.adicionar_log("Fechando Atlas Browser...")
+        try:
+            # Tenta fechar de forma limpa via comando de sistema
+            subprocess.run(["taskkill", "/F", "/IM", "AtlasBrowser.exe"], 
+                           capture_output=True, text=True, check=False)
+            time.sleep(2) # Espera o processo encerrar totalmente
+            self.adicionar_log("Atlas fechado com sucesso.", "ok")
+        except Exception as e:
+            self.adicionar_log(f"Erro ao fechar Atlas: {str(e)}", "err")
 
     def start_thread(self):
         if not self.caminho_base or not os.path.exists(self.caminho_base):
@@ -426,6 +453,10 @@ class App(ctk.CTk):
                 self.adicionar_log(f"--- Finalizado: {centro} ---", "suc")
             else:
                 self.adicionar_log(f"--- Falha: {centro} ---", "err")
+            
+            # FECHAR ATLAS APÓS CADA UNIDADE
+            self.fechar_atlas()
+            time.sleep(1)
         
         self.executando = False
         self._set_unidade_status("Automação concluída para todos os centros.")
@@ -445,10 +476,14 @@ class App(ctk.CTk):
             # Etapa 0 — Abrir Atlas
             self._set_step(0, "active")
             os.startfile(CAMINHO_ATLAS_EXE)
-            if not self.clicar_img("assets/selectcenter.png", "Seletor de centro", timeout=30):
+            if not self.clicar_img("assets/selectcenter.png", "Seletor de centro", timeout=40):
                 raise Exception("Atlas não abriu corretamente.")
+            
             self.clicar_img(CENTROS_IMAGENS[unidade], unidade)
-            self.clicar_img("assets/iniciar.png", "Botão Iniciar")
+            
+            # Clica em Iniciar com region filtering e force click
+            self.clicar_img("assets/atlas_cargo.png", "Botão Iniciar", timeout=15, click_type="force")
+            
             self._set_step(0, "done")
             self._set_progress(0.17)
 
