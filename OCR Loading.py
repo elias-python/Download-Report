@@ -21,7 +21,7 @@ ARQUIVO_CONFIG = "config_atlas.json"
 # --- PALETA ---
 COR_LARANJA     = "#FF8C00"
 COR_LARANJA_H   = "#e67e00"
-COR_LARANJA_BG  = "#FF8C0022"
+COR_LARANJA_BG  = "#1C1C1B"
 COR_FUNDO       = "#F5F4F2"       # fundo geral cinza-quente
 COR_CARD        = "#FFFFFF"       # cards brancos
 COR_BORDA       = "#E0DDD8"       # bordas suaves
@@ -105,7 +105,7 @@ class StepBar(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Mosaic Atlas Vision v3.4")
+        self.title("Mosaic Atlas Vision v1.0")
         self.geometry("500x820")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
@@ -175,7 +175,7 @@ class App(ctk.CTk):
         # Textos
         txt_frame = ctk.CTkFrame(header, fg_color="transparent")
         txt_frame.pack(side="left", padx=10)
-        ctk.CTkLabel(txt_frame, text="Mosaic Atlas Vision",
+        ctk.CTkLabel(txt_frame, text="Mosaic Atlas OCR - Expedição",
                      font=("Segoe UI Semibold", 16, "bold"),
                      text_color=COR_TEXTO).pack(anchor="w")
         ctk.CTkLabel(txt_frame, text="Automação de relatórios",
