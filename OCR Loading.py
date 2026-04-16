@@ -246,17 +246,14 @@ class App(ctk.CTk):
                      font=("Segoe UI", 10, "bold"),
                      text_color=COR_MUTED).pack(anchor="w", padx=16, pady=(14, 6))
 
-        self.combo_unidades = ctk.CTkComboBox(
+        self.lbl_unidade_status = ctk.CTkLabel(
             card_rota,
-            values=list(CENTROS_IMAGENS.keys()),
-            width=440, height=40, corner_radius=8,
-            border_color=COR_BORDA, fg_color=COR_FUNDO,
-            button_color=COR_BORDA, button_hover_color=COR_MUTED,
-            dropdown_fg_color=COR_CARD, dropdown_text_color=COR_TEXTO,
-            text_color=COR_TEXTO, font=("Segoe UI", 13)
+            text="Aguardando início...",
+            font=("Segoe UI Semibold", 14),
+            text_color=COR_TEXTO,
+            anchor="w"
         )
-        self.combo_unidades.pack(padx=12, pady=(0, 6))
-        self.combo_unidades.set("Selecione a unidade...")
+        self.lbl_unidade_status.pack(fill="x", padx=16, pady=(0, 10))
 
         # Separador
         sep = ctk.CTkFrame(card_rota, fg_color=COR_BORDA, height=1)
@@ -264,7 +261,7 @@ class App(ctk.CTk):
 
         # Botão iniciar
         self.btn_iniciar = ctk.CTkButton(
-            card_rota, text="▶   Iniciar automação",
+            card_rota, text="▶   Iniciar Automação Total",
             height=46, corner_radius=10,
             fg_color=COR_LARANJA, hover_color=COR_LARANJA_H,
             text_color="white", font=("Segoe UI Semibold", 14, "bold"),
@@ -367,6 +364,9 @@ class App(ctk.CTk):
         self.after(0, lambda: self.lbl_status_pill.configure(
             text=f" {text} ", text_color=color, fg_color=bg))
 
+    def _set_unidade_status(self, text):
+        self.after(0, lambda: self.lbl_unidade_status.configure(text=text))
+
     # ─────────────────────────────────────────────
     #  AUTOMATION HELPERS
     # ─────────────────────────────────────────────
@@ -395,24 +395,53 @@ class App(ctk.CTk):
         if not self.caminho_base or not os.path.exists(self.caminho_base):
             messagebox.showwarning("Atenção", "Configure a pasta de destino na engrenagem ⚙ primeiro.")
             return
-        unidade = self.combo_unidades.get()
-        if not unidade or unidade == "Selecione a unidade...":
-            messagebox.showwarning("Atenção", "Selecione uma unidade antes de iniciar.")
-            return
+        
         self.executando = True
         self.btn_iniciar.configure(state="disabled", text="⏹   Executando...",
                                    fg_color="#555", hover_color="#444")
         self.step_bar.reset()
         self._set_progress(0)
         self._set_pill("Executando", COR_LARANJA, COR_LARANJA_BG)
-        threading.Thread(target=self.executar_robo, daemon=True).start()
+        threading.Thread(target=self.executar_sequencial, daemon=True).start()
 
-    def executar_robo(self):
+    def executar_sequencial(self):
+        centros = list(CENTROS_IMAGENS.keys())
+        total_centros = len(centros)
+        
+        for i, centro in enumerate(centros):
+            if not self.executando:
+                break
+            
+            status_msg = f"[{i+1}/{total_centros}] {centro}: Processando..."
+            self._set_unidade_status(status_msg)
+            self.adicionar_log(f"--- Iniciando Centro: {centro} ---", "ok")
+            
+            # Reset visual para cada centro
+            self.step_bar.reset()
+            self._set_progress(0)
+            
+            sucesso = self.executar_robo(centro)
+            
+            if sucesso:
+                self.adicionar_log(f"--- Finalizado: {centro} ---", "suc")
+            else:
+                self.adicionar_log(f"--- Falha: {centro} ---", "err")
+        
+        self.executando = False
+        self._set_unidade_status("Automação concluída para todos os centros.")
+        self._set_pill("Concluído", COR_SUCCESS, "#E6F4EC")
+        self.after(0, self.deiconify)
+        self.after(0, lambda: self.btn_iniciar.configure(
+            state="normal",
+            text="▶   Iniciar Automação Total",
+            fg_color=COR_LARANJA,
+            hover_color=COR_LARANJA_H
+        ))
+
+    def executar_robo(self, unidade):
         try:
-            unidade = self.combo_unidades.get()
             self.after(0, self.iconify)
-            self.adicionar_log(f"Iniciando automação para: {unidade}")
-
+            
             # Etapa 0 — Abrir Atlas
             self._set_step(0, "active")
             os.startfile(CAMINHO_ATLAS_EXE)
@@ -435,12 +464,21 @@ class App(ctk.CTk):
 
             # Etapa 2 — Relatório
             self._set_step(2, "active")
-            self.clicar_img("assets/impressao.png", "Menu Impressão", timeout=25)
-            self.clicar_img("assets/relatorios.png", "Menu Relatórios")
+            
+            # Lógica específica para CATALÃO
+            if unidade == "CATALÃO":
+                self.clicar_img("assets/impressao_catalao.png", "Menu Impressão (Catalão)", timeout=25)
+                self.clicar_img("assets/relatorio_catalao.png", "Menu Relatórios (Catalão)")
+            else:
+                self.clicar_img("assets/impressao.png", "Menu Impressão", timeout=25)
+                self.clicar_img("assets/relatorios.png", "Menu Relatórios")
+            
+            # Sub-menu de relatórios
             if unidade == "UBERABA":
                 self.clicar_img("assets/relatorios_ubr.png", "Relatórios UBR")
             else:
                 self.clicar_img("assets/relatordiariobal.png", "Relatório Balança")
+            
             self._set_step(2, "done")
             self._set_progress(0.50)
 
@@ -482,21 +520,12 @@ class App(ctk.CTk):
             self.mover_arquivo(unidade, hoje.strftime("%m.%Y"))
             self._set_step(5, "done")
             self._set_progress(1.0)
-            self._set_pill("Concluído", COR_SUCCESS, "#E6F4EC")
+            
+            return True
 
         except Exception as e:
-            self.adicionar_log(f"ERRO: {str(e)}", "err")
-            self._set_pill("Erro", COR_ERROR, "#FDECEA")
-            self.after(0, lambda: messagebox.showerror("Erro na automação", str(e)))
-        finally:
-            self.executando = False
-            self.after(0, self.deiconify)
-            self.after(0, lambda: self.btn_iniciar.configure(
-                state="normal",
-                text="▶   Iniciar automação",
-                fg_color=COR_LARANJA,
-                hover_color=COR_LARANJA_H
-            ))
+            self.adicionar_log(f"ERRO em {unidade}: {str(e)}", "err")
+            return False
 
     def mover_arquivo(self, unidade, mes_ano):
         nomes = {
