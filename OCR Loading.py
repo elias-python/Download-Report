@@ -45,9 +45,11 @@ CENTROS_IMAGENS = {
     "CATALÃO": "assets/catalao.png",
     "SORRISO": "assets/sorriso.png",
     "PGUA 1": "assets/pgua1.png",
+    "PGUA 2": "assets/selecionar_pg2.png", 
     "RONDONÓPOLIS": "assets/rondonopolis.png",
     "RIO VERDE": "assets/rioverde.png",
-    "RIO GRANDE": "assets/riogrande.png"
+    "RIO GRANDE": "assets/riogrande.png",
+    "PALMEIRANTE": "assets/palmeirante.png"
 }
 
 STEPS = ["Abrir Atlas", "Login", "Relatório", "Configurar", "Exportar", "Mover arquivo"]
@@ -93,7 +95,7 @@ class StepBar(ctk.CTkFrame):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Mosaic Atlas Vision v1.1")
+        self.title("Mosaic Atlas Vision v2.2")
         self.geometry("500x820")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
@@ -131,6 +133,15 @@ class App(ctk.CTk):
             self.lbl_dest_hint.configure(text="Nenhum caminho definido")
             self.lbl_dest_badge.configure(text="  —  ", text_color=COR_MUTED, fg_color=COR_FUNDO, corner_radius=6)
 
+    def toggle_all(self):
+        algum_desmarcado = any(chk.get() == 0 for chk in self.checkboxes.values())
+        if algum_desmarcado:
+            for chk in self.checkboxes.values(): chk.select()
+            self.btn_toggle_all.configure(text="Desmarcar Todos")
+        else:
+            for chk in self.checkboxes.values(): chk.deselect()
+            self.btn_toggle_all.configure(text="Marcar Todos")
+
     def _build_ui(self):
         PAD = 20
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -142,7 +153,7 @@ class App(ctk.CTk):
         txt_frame = ctk.CTkFrame(header, fg_color="transparent")
         txt_frame.pack(side="left", padx=10)
         ctk.CTkLabel(txt_frame, text="Mosaic Atlas OCR - Expedição", font=("Segoe UI Semibold", 16, "bold"), text_color=COR_TEXTO).pack(anchor="w")
-        ctk.CTkLabel(txt_frame, text="Automação Multi-Monitor", font=("Segoe UI", 11), text_color=COR_MUTED).pack(anchor="w")
+        ctk.CTkLabel(txt_frame, text="Automação Seletiva", font=("Segoe UI", 11), text_color=COR_MUTED).pack(anchor="w")
         ctk.CTkButton(header, text="⚙", width=36, height=36, corner_radius=8, fg_color=COR_CARD, hover_color=COR_FUNDO, border_width=1, border_color=COR_BORDA, text_color=COR_MUTED, font=("Segoe UI", 16), command=self.selecionar_caminho_base).pack(side="right")
         
         card_dest = ctk.CTkFrame(self, fg_color=COR_CARD, corner_radius=12, border_width=1, border_color=COR_BORDA)
@@ -161,10 +172,31 @@ class App(ctk.CTk):
 
         card_rota = ctk.CTkFrame(self, fg_color=COR_CARD, corner_radius=12, border_width=1, border_color=COR_BORDA)
         card_rota.pack(fill="x", padx=PAD, pady=6)
-        ctk.CTkLabel(card_rota, text="UNIDADE DE DISTRIBUIÇÃO", font=("Segoe UI", 10, "bold"), text_color=COR_MUTED).pack(anchor="w", padx=16, pady=(14, 6))
-        self.lbl_unidade_status = ctk.CTkLabel(card_rota, text="Aguardando início...", font=("Segoe UI Semibold", 14), text_color=COR_TEXTO, anchor="w")
+        
+        topo_rota = ctk.CTkFrame(card_rota, fg_color="transparent")
+        topo_rota.pack(fill="x", padx=16, pady=(14, 6))
+        ctk.CTkLabel(topo_rota, text="UNIDADES DE DISTRIBUIÇÃO", font=("Segoe UI", 10, "bold"), text_color=COR_MUTED).pack(side="left")
+        
+        self.btn_toggle_all = ctk.CTkButton(topo_rota, text="Desmarcar Todos", width=100, height=22, fg_color=COR_FUNDO, text_color=COR_TEXTO, hover_color=COR_BORDA, command=self.toggle_all)
+        self.btn_toggle_all.pack(side="right")
+
+        self.frame_checks = ctk.CTkScrollableFrame(card_rota, height=120, fg_color="transparent")
+        self.frame_checks.pack(fill="x", padx=12, pady=(0, 5))
+
+        self.checkboxes = {}
+        for centro in CENTROS_IMAGENS.keys():
+            chk = ctk.CTkCheckBox(
+                self.frame_checks, text=centro, 
+                fg_color=COR_LARANJA, hover_color=COR_LARANJA_H, 
+                font=("Segoe UI", 12), text_color=COR_TEXTO
+            )
+            chk.pack(anchor="w", pady=4, padx=5)
+            chk.select()
+            self.checkboxes[centro] = chk
+
+        self.lbl_unidade_status = ctk.CTkLabel(card_rota, text="Selecione as unidades acima.", font=("Segoe UI", 12), text_color=COR_MUTED, anchor="w")
         self.lbl_unidade_status.pack(fill="x", padx=16, pady=(0, 10))
-        self.btn_iniciar = ctk.CTkButton(card_rota, text="▶   Iniciar Automação Total", height=46, corner_radius=10, fg_color=COR_LARANJA, hover_color=COR_LARANJA_H, text_color="white", command=self.start_thread)
+        self.btn_iniciar = ctk.CTkButton(card_rota, text="▶   Iniciar Automação", height=46, corner_radius=10, fg_color=COR_LARANJA, hover_color=COR_LARANJA_H, text_color="white", command=self.start_thread)
         self.btn_iniciar.pack(fill="x", padx=12, pady=(0, 14))
 
         card_prog = ctk.CTkFrame(self, fg_color=COR_CARD, corner_radius=12, border_width=1, border_color=COR_BORDA)
@@ -187,7 +219,7 @@ class App(ctk.CTk):
         self.log_text.tag_config("ok", foreground=COR_LARANJA)
         self.log_text.tag_config("err", foreground=COR_ERROR)
         self.log_text.tag_config("suc", foreground=COR_SUCCESS)
-        self.adicionar_log("Sistema pronto. Resiliência multi-monitor ativada.")
+        self.adicionar_log("Sistema pronto para seleção de unidades.")
 
     def adicionar_log(self, msg, tipo=None):
         hora = datetime.now().strftime("%H:%M:%S")
@@ -206,11 +238,9 @@ class App(ctk.CTk):
     def _set_unidade_status(self, text): self.after(0, lambda: self.lbl_unidade_status.configure(text=text))
 
     def clicar_img(self, img, desc, timeout=20, confidence=0.7, double=False, click_type="standard"):
-        """Busca imagem com tolerância a escala e múltiplos monitores."""
         self.adicionar_log(f"Buscando: {desc}")
         inicio = time.time()
         
-        # Se a imagem não existir, pula para evitar erro fatal
         if not os.path.exists(img):
             self.adicionar_log(f"Aviso: Arquivo {img} não encontrado.", "err")
             return False
@@ -218,9 +248,7 @@ class App(ctk.CTk):
         while time.time() - inicio < timeout:
             if not self.executando: return False
             try:
-                # Tenta localizar em todos os monitores (comportamento padrão do pyautogui)
                 pos = pyautogui.locateCenterOnScreen(img, confidence=confidence)
-                
                 if pos:
                     if click_type == "force":
                         pyautogui.moveTo(pos.x, pos.y, duration=0.2)
@@ -248,6 +276,7 @@ class App(ctk.CTk):
         if not self.caminho_base or not os.path.exists(self.caminho_base):
             messagebox.showwarning("Atenção", "Configure a pasta de destino primeiro.")
             return
+        
         self.executando = True
         self.btn_iniciar.configure(state="disabled", text="⏹ Executando...")
         self.step_bar.reset()
@@ -255,50 +284,109 @@ class App(ctk.CTk):
         threading.Thread(target=self.executar_sequencial, daemon=True).start()
 
     def executar_sequencial(self):
-        centros = list(CENTROS_IMAGENS.keys())
-        for i, centro in enumerate(centros):
+        centros_selecionados = [centro for centro, chk in self.checkboxes.items() if chk.get() == 1]
+
+        if not centros_selecionados:
+            self.adicionar_log("Nenhuma unidade selecionada para execução.", "err")
+            self.executando = False
+            self.after(0, lambda: self.btn_iniciar.configure(state="normal", text="▶   Iniciar Automação"))
+            return
+
+        for i, centro in enumerate(centros_selecionados):
             if not self.executando: break
-            self._set_unidade_status(f"[{i+1}/{len(centros)}] {centro}: Processando...")
+            self._set_unidade_status(f"[{i+1}/{len(centros_selecionados)}] {centro}: Processando...")
             self.step_bar.reset()
             self._set_progress(0)
+            
             if self.executar_robo(centro):
                 self.adicionar_log(f"Sucesso: {centro}", "suc")
             else:
                 self.adicionar_log(f"Falha: {centro}", "err")
+            
+            # Fecha o Atlas sempre, para garantir que o cache de um centro não suje o próximo
             self.fechar_atlas()
             time.sleep(1)
+            
         self.executando = False
-        self._set_unidade_status("Concluído.")
-        self.after(0, lambda: self.btn_iniciar.configure(state="normal", text="▶ Iniciar Automação Total"))
+        self._set_unidade_status("Processo Finalizado.")
+        self.after(0, lambda: self.btn_iniciar.configure(state="normal", text="▶   Iniciar Automação"))
 
     def executar_robo(self, unidade):
         try:
             self.after(0, self.iconify)
-            self._set_step(0, "active")
-            os.startfile(CAMINHO_ATLAS_EXE)
-            if not self.clicar_img("assets/selectcenter.png", "Seletor de centro", timeout=40):
-                return False
             
-            self.clicar_img(CENTROS_IMAGENS[unidade], unidade)
-            self.clicar_img("assets/atlas_cargo.png", "Botão Iniciar", timeout=15, click_type="force")
-            self._set_step(0, "done")
-            self._set_progress(0.17)
+            # --- DESVIO PARA PGUA 1 E PGUA 2 (Combate ao Cache) ---
+            if unidade in ["PGUA 1", "PGUA 2"]:
+                self._set_step(0, "active")
+                os.startfile(CAMINHO_ATLAS_EXE)
+                if not self.clicar_img("assets/selectcenter.png", "Seletor de centro", timeout=40):
+                    return False
+                
+                # Clica sempre no PGUA 1 na tela inicial (login principal)
+                self.clicar_img(CENTROS_IMAGENS["PGUA 1"], "PGUA 1 (Login)")
+                self.clicar_img("assets/atlas_cargo.png", "Botão Iniciar", timeout=15, click_type="force")
+                self._set_step(0, "done")
+                self._set_progress(0.17)
 
-            self._set_step(1, "active")
-            if self.clicar_img("assets/user.png", "Campo usuário", timeout=15):
-                pyautogui.write('ESANTAN3')
-                self.clicar_img("assets/senha.png", "Campo senha")
-            if unidade == "PGUA 1":
-                pyautogui.write('Mosaic@2027')
+                self._set_step(1, "active")
+                if self.clicar_img("assets/user.png", "Campo usuário", timeout=15):
+                    pyautogui.write('ESANTAN3')
+                    self.clicar_img("assets/senha.png", "Campo senha")
+                    pyautogui.write('Mosaic@2027')
+                    pyautogui.press('enter')
+                
+                # Força a seleção correta internamente VIA TECLADO para evitar o cache
+                self.adicionar_log(f"Selecionando {unidade} internamente via teclado...", "ok")
+                time.sleep(2)
+                
+                if self.clicar_img("assets/abrir_botaopg2.png", "Botão Seletor Interno", timeout=15):
+                    time.sleep(1) # PAUSA VITAL para animação da lista abrir
+                    
+                    if unidade == "PGUA 1":
+                        self.adicionar_log("Navegando para PGUA 1 (Lógica invertida)...", "ok")
+                        # Vimos na prática que sobe-sobe-desce cai no PGUA 1
+                        pyautogui.press('up')
+                        pyautogui.press('up')
+                        pyautogui.press('down')
+                        time.sleep(0.5)
+                        pyautogui.press('enter')
+                    else:
+                        self.adicionar_log("Navegando para PGUA 2 (Lógica invertida)...", "ok")
+                        # E vimos na prática que sobe-sobe cai no PGUA 2
+                        pyautogui.press('up')
+                        pyautogui.press('up') 
+                        time.sleep(0.5)
+                        pyautogui.press('enter')
+                
+                self._set_step(1, "done")
+                self._set_progress(0.34)
+            
             else:
-                pyautogui.write('Mosaic@2026')
+                # --- FLUXO PADRÃO ---
+                self._set_step(0, "active")
+                os.startfile(CAMINHO_ATLAS_EXE)
+                if not self.clicar_img("assets/selectcenter.png", "Seletor de centro", timeout=40):
+                    return False
+                
+                self.clicar_img(CENTROS_IMAGENS[unidade], unidade)
+                self.clicar_img("assets/atlas_cargo.png", "Botão Iniciar", timeout=15, click_type="force")
+                self._set_step(0, "done")
+                self._set_progress(0.17)
 
-            pyautogui.press('enter')
-            self._set_step(1, "done")
-            self._set_progress(0.34)
+                self._set_step(1, "active")
+                if self.clicar_img("assets/user.png", "Campo usuário", timeout=15):
+                    pyautogui.write('ESANTAN3')
+                    self.clicar_img("assets/senha.png", "Campo senha")
+                    pyautogui.write('Mosaic@2026')
+                    pyautogui.press('enter')
 
+                self._set_step(1, "done")
+                self._set_progress(0.34)
+
+            # --- FLUXO DE NAVEGAÇÃO COMPARTILHADO ---
             self._set_step(2, "active")
-            if unidade == "CATALÃO":
+            time.sleep(2)
+            if unidade in ["CATALÃO", "PALMEIRANTE"]:
                 self.clicar_img("assets/impressao_catalao.png", "Menu Impressão", timeout=25)
                 self.clicar_img("assets/relatorio_catalao.png", "Menu Relatórios")
             else:
@@ -323,6 +411,7 @@ class App(ctk.CTk):
                     pyautogui.hotkey('ctrl', 'a')
                     pyautogui.write('0')
                     pyautogui.press('tab')
+                    
             if unidade in ["UBERABA", "RONDONÓPOLIS"]:
                 if self.clicar_img("assets/selectfluxo.png", "Fluxo"):
                     pyautogui.write("CARREGAMENTO")
@@ -346,12 +435,24 @@ class App(ctk.CTk):
             self._set_step(5, "done")
             self._set_progress(1.0)
             return True
+            
         except Exception as e:
             self.adicionar_log(f"Erro: {str(e)}", "err")
             return False
 
     def mover_arquivo(self, unidade, mes_ano):
-        nomes = {"PGUA 1": "Paranagua 1", "UBERABA": "Uberaba", "SORRISO": "Sorriso", "RONDONÓPOLIS": "Rondonópolis", "RIO VERDE": "Rio Verde", "RIO GRANDE": "Rio Grande", "CATALÃO": "Catalão", "CANDEIAS": "Candeias"}
+        nomes = {
+            "PGUA 1": "Paranagua 1", 
+            "PGUA 2": "Paranagua 2", 
+            "UBERABA": "Uberaba", 
+            "SORRISO": "Sorriso", 
+            "RONDONÓPOLIS": "Rondonópolis", 
+            "RIO VERDE": "Rio Verde", 
+            "RIO GRANDE": "Rio Grande", 
+            "CATALÃO": "Catalão", 
+            "CANDEIAS": "Candeias",
+            "PALMEIRANTE": "Palmeirante",
+        }
         nome_exibicao = nomes.get(unidade, unidade)
         tempo_inicio = time.time()
         for _ in range(60):
