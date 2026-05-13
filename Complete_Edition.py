@@ -81,8 +81,8 @@ RECEPCAO_ASSETS = {
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Mosaic RDE RPA v5.4 - Ultimate (Anti-Lock)")
-        self.geometry("680x980")
+        self.title("Mosaic RDE RPA v2.1")
+        self.geometry("680x880")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
 
