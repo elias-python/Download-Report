@@ -73,7 +73,7 @@ RECEPCAO_ASSETS = {
     "SORRISO": "relatorio_recepcao_1.png",
     "PALMEIRANTE": "relatorio_recepcao.png",
     "RONDONOPOLIS": "relatorio_recepcao_1.png",
-    "RIO VERDE": "relatorio_recepcao_1.png",
+    "RIO VERDE": "recep_rioverde.png",
     "RIO GRANDE": "relatorio_recepcao.png",
 }
 
