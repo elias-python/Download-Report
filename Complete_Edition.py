@@ -8,11 +8,14 @@ import subprocess
 from datetime import datetime, timedelta
 import threading
 from tkinter import messagebox, filedialog
+import sys
+import pystray
+from PIL import Image, ImageDraw
 import win32com.client
 import pythoncom
 
 # --- CONFIGURAÇÕES DE PERFORMANCE ---
-pyautogui.PAUSE = 0.2
+pyautogui.PAUSE = 0.05
 pyautogui.FAILSAFE = True
 
 try:
@@ -35,21 +38,21 @@ CAMINHO_DOWNLOADS = os.path.join(pasta_usuario, "Downloads")
 ARQUIVO_CONFIG = "config_atlas_unified.json"
 
 # --- PALETA DE CORES ---
-TEMA_DESCARGA = {"base": "#22577a", "hover": "#22577a"}
-TEMA_CARREGAMENTO = {"base": "#52796f", "hover": "#52796f"}
-TEMA_RECEPCAO = {"base": "#8B4513", "hover": "#8B4513"}
-TEMA_AMBOS = {"base": "#d4d700", "hover": "#d4d700"}
-COR_SAP = "#008FD3"
+TEMA_DESCARGA = {"base": "#3B82F6", "hover": "#2563EB"}
+TEMA_CARREGAMENTO = {"base": "#10B981", "hover": "#059669"}
+TEMA_RECEPCAO = {"base": "#F97316", "hover": "#EA580C"}
+TEMA_AMBOS = {"base": "#8B5CF6", "hover": "#7C3AED"}
+COR_SAP = "#0EA5E9"
 
-COR_FUNDO = "#F5F4F2"
-COR_CARD = "#FFFFFF"
-COR_BORDA = "#E0DDD8"
-COR_TEXTO = "#1C1C1B"
-COR_MUTED = "#8A8880"
-COR_TERMINAL_BG = "#1C1C1B"
-COR_TERMINAL_FG = "#A0A09A"
-COR_SUCCESS = "#2D8A4E"
-COR_ERROR = "#C0392B"
+COR_FUNDO = "#0F0F17"
+COR_CARD = "#1A1A26"
+COR_BORDA = "#2E2E42"
+COR_TEXTO = "#EEEEF8"
+COR_MUTED = "#6B6B85"
+COR_TERMINAL_BG = "#090910"
+COR_TERMINAL_FG = "#7070A0"
+COR_SUCCESS = "#34D399"
+COR_ERROR = "#F87171"
 
 CENTROS_IMAGENS = {
     "UBERABA": "assets/uberaba.png",
@@ -72,7 +75,7 @@ RECEPCAO_ASSETS = {
     "CATALÃO": "relatorio_recepcao.png",
     "SORRISO": "relatorio_recepcao_1.png",
     "PALMEIRANTE": "relatorio_recepcao.png",
-    "RONDONOPOLIS": "relatorio_recepcao_1.png",
+    "RONDONÓPOLIS": "relatorio_recepcao_1.png",
     "RIO VERDE": "recep_rioverde.png",
     "RIO GRANDE": "relatorio_recepcao.png",
 }
@@ -88,6 +91,11 @@ class App(ctk.CTk):
 
         self.executando = False
         self.senha_incorreta = False
+        self.auto_mode = (
+            "atlas"
+            if "--auto-atlas" in sys.argv
+            else "sap" if "--auto-sap" in sys.argv else None
+        )
 
         config_data = self.carregar_config()
         self.caminho_descarga = config_data.get("caminho_descarga", "")
@@ -99,6 +107,11 @@ class App(ctk.CTk):
         self.user_atlas = config_data.get("user_atlas", "")
         self.pass_atlas = config_data.get("pass_atlas", "")
         self.ultima_att = config_data.get("ultima_att", "Nunca")
+        self.horario_atlas = config_data.get("horario_atlas", "07:30")
+        self.horario_sap_inicio = config_data.get("horario_sap_inicio", "07:00")
+        self.intervalo_sap_h = config_data.get("intervalo_sap_h", "2")
+
+        self.auto_close = self.auto_mode is not None
 
         self.modo_var = ctk.StringVar(value="📥 Descarga")
         self.tema_atual = TEMA_DESCARGA
@@ -106,7 +119,16 @@ class App(ctk.CTk):
         self._build_ui()
         self.atualizar_relogio()
         self.ao_mudar_modo(self.modo_var.get())
-        self.after(350, self.mostrar_aviso_resolucao)
+        self._setup_tray()
+        self._keepalive_stop = threading.Event()
+        threading.Thread(target=self._keepalive_sap, daemon=True).start()
+        self.protocol("WM_DELETE_WINDOW", self._minimizar_para_tray)
+        self.after(2000, self._verificar_agendamento)
+        if self.auto_mode:
+            self.withdraw()
+            self.after(1500, self._auto_iniciar)
+        else:
+            self.after(350, self.mostrar_aviso_resolucao)
 
     def abrir_configuracoes_tela(self):
         try:
@@ -171,7 +193,7 @@ class App(ctk.CTk):
             text="Abrir Configurações de Tela",
             height=38,
             fg_color=COR_SAP,
-            hover_color="#007BB5",
+            hover_color="#0284C7",
             command=self.abrir_configuracoes_tela,
         ).pack(side="left")
 
@@ -180,7 +202,7 @@ class App(ctk.CTk):
             text="Continuar",
             height=38,
             fg_color=COR_TEXTO,
-            hover_color="#333333",
+            hover_color="#000000",
             command=modal.destroy,
         ).pack(side="right")
 
@@ -206,6 +228,9 @@ class App(ctk.CTk):
         csap1=None,
         csap2=None,
         csap3=None,
+        horario_atlas=None,
+        horario_sap_inicio=None,
+        intervalo_sap_h=None,
     ):
         dados = self.carregar_config()
         if caminho_desc is not None:
@@ -226,6 +251,12 @@ class App(ctk.CTk):
             dados["caminho_sap2"] = csap2
         if csap3 is not None:
             dados["caminho_sap3"] = csap3
+        if horario_atlas is not None:
+            dados["horario_atlas"] = horario_atlas
+        if horario_sap_inicio is not None:
+            dados["horario_sap_inicio"] = horario_sap_inicio
+        if intervalo_sap_h is not None:
+            dados["intervalo_sap_h"] = intervalo_sap_h
         with open(ARQUIVO_CONFIG, "w") as f:
             json.dump(dados, f)
 
@@ -290,14 +321,14 @@ class App(ctk.CTk):
                     text="✔️ Todas as pastas configuradas.", text_color=COR_SUCCESS
                 )
                 self.lbl_dest_badge.configure(
-                    text=" OK ", text_color=COR_SUCCESS, fg_color="#E6F4EC"
+                    text=" OK ", text_color=COR_SUCCESS, fg_color="#0D2B1A"
                 )
             else:
                 self.lbl_dest_path.configure(
                     text="⚠️ Falta configurar caminhos.", text_color=COR_ERROR
                 )
                 self.lbl_dest_badge.configure(
-                    text=" ERRO ", text_color=COR_ERROR, fg_color="#FDECEA"
+                    text=" ERRO ", text_color=COR_ERROR, fg_color="#2D0D0D"
                 )
             return
 
@@ -620,8 +651,85 @@ class App(ctk.CTk):
         chk_sap3.pack(anchor="w", padx=15, pady=(5, 10))
         self.sap_tasks["Passo 3"] = chk_sap3
 
-        # ==========================================
-        # CONTROLES GLOBAIS (FORA DAS ABAS)
+        # --- AGENDAMENTO AUTOMÁTICO ---
+        card_agenda = ctk.CTkFrame(tab_sap, fg_color=COR_FUNDO, corner_radius=8)
+        card_agenda.pack(fill="x", padx=5, pady=(8, 5))
+
+        ctk.CTkLabel(
+            card_agenda,
+            text="AGENDAMENTO AUTOMÁTICO",
+            font=("Segoe UI", 10, "bold"),
+            text_color=COR_MUTED,
+        ).pack(anchor="w", padx=10, pady=(8, 4))
+
+        row_atlas = ctk.CTkFrame(card_agenda, fg_color="transparent")
+        row_atlas.pack(fill="x", padx=10, pady=(0, 4))
+        ctk.CTkLabel(
+            row_atlas,
+            text="⏰ Atlas diário",
+            font=("Segoe UI", 11),
+            width=120,
+            anchor="w",
+        ).pack(side="left")
+        ctk.CTkLabel(
+            row_atlas, text="Horário:", font=("Segoe UI", 11), text_color=COR_MUTED
+        ).pack(side="left", padx=(0, 5))
+        self.ent_horario_atlas = ctk.CTkEntry(
+            row_atlas, width=58, height=26, placeholder_text="07:30"
+        )
+        self.ent_horario_atlas.insert(0, self.horario_atlas)
+        self.ent_horario_atlas.pack(side="left")
+        ctk.CTkLabel(
+            row_atlas, text="  Seg–Sex", font=("Segoe UI", 10), text_color=COR_MUTED
+        ).pack(side="left")
+
+        row_sap = ctk.CTkFrame(card_agenda, fg_color="transparent")
+        row_sap.pack(fill="x", padx=10, pady=(0, 4))
+        ctk.CTkLabel(
+            row_sap,
+            text="🔄 SAP downloads",
+            font=("Segoe UI", 11),
+            width=120,
+            anchor="w",
+        ).pack(side="left")
+        ctk.CTkLabel(
+            row_sap, text="A cada", font=("Segoe UI", 11), text_color=COR_MUTED
+        ).pack(side="left", padx=(0, 4))
+        self.ent_intervalo_sap = ctk.CTkEntry(
+            row_sap, width=32, height=26, placeholder_text="2"
+        )
+        self.ent_intervalo_sap.insert(0, self.intervalo_sap_h)
+        self.ent_intervalo_sap.pack(side="left")
+        ctk.CTkLabel(
+            row_sap, text="h  início", font=("Segoe UI", 11), text_color=COR_MUTED
+        ).pack(side="left", padx=(3, 4))
+        self.ent_horario_sap = ctk.CTkEntry(
+            row_sap, width=58, height=26, placeholder_text="07:00"
+        )
+        self.ent_horario_sap.insert(0, self.horario_sap_inicio)
+        self.ent_horario_sap.pack(side="left")
+        ctk.CTkLabel(
+            row_sap, text="  Seg–Sex", font=("Segoe UI", 10), text_color=COR_MUTED
+        ).pack(side="left")
+
+        row_status = ctk.CTkFrame(card_agenda, fg_color="transparent")
+        row_status.pack(fill="x", padx=10, pady=(4, 8))
+        self.lbl_agenda_status = ctk.CTkLabel(
+            row_status,
+            text="○ Verificando...",
+            font=("Segoe UI", 11),
+            text_color=COR_MUTED,
+        )
+        self.lbl_agenda_status.pack(side="left")
+        ctk.CTkButton(
+            row_status,
+            text="⚙ Configurar Agendamento",
+            width=175,
+            height=28,
+            fg_color=COR_SAP,
+            hover_color="#0284C7",
+            command=self.configurar_agendamento,
+        ).pack(side="right")
         # ==========================================
         self.lbl_unidade_status = ctk.CTkLabel(
             self,
@@ -719,6 +827,28 @@ class App(ctk.CTk):
     # ==========================================
     # LÓGICA DO MÓDULO SAP
     # ==========================================
+    def _keepalive_sap(self):
+        """Ping leve ao SAP a cada 12 min para evitar expiração de sessão."""
+        pythoncom.CoInitialize()
+        while not self._keepalive_stop.wait(timeout=12 * 60):
+            if getattr(self, "executando", False):
+                continue  # Não interferir durante execução
+            try:
+                session = self.conectar_sap()
+                if session:
+                    _ = session.Info.SystemName  # leitura leve — reseta timeout
+                else:
+                    try:
+                        if self.tray_icon:
+                            self.tray_icon.notify(
+                                "SAP não detectado — abra o SAP GUI antes da próxima execução",
+                                "Mosaic RDE RPA",
+                            )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
     def conectar_sap(self):
         try:
             SapGuiAuto = win32com.client.GetObject("SAPGUI")
@@ -843,6 +973,154 @@ class App(ctk.CTk):
             "err",
         )
         return False
+
+    # ==========================================
+    # AGENDAMENTO DO WINDOWS TASK SCHEDULER
+    # ==========================================
+    def _verificar_agendamento(self):
+        """Verifica se as tarefas já estão registradas e atualiza o status."""
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-Command",
+                    "Get-ScheduledTask -TaskName 'Mosaic RPA - Atlas Diario'"
+                    " -ErrorAction SilentlyContinue"
+                    " | Select-Object -ExpandProperty State",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                self.lbl_agenda_status.configure(
+                    text="● Agendamento ativo", text_color=COR_SUCCESS
+                )
+            else:
+                self.lbl_agenda_status.configure(
+                    text="○ Não configurado", text_color=COR_MUTED
+                )
+        except Exception:
+            self.lbl_agenda_status.configure(
+                text="○ Status desconhecido", text_color=COR_MUTED
+            )
+
+    def configurar_agendamento(self):
+        """Cria/atualiza as tarefas no Agendador de Tarefas do Windows."""
+        import re
+        import tempfile
+
+        horario_atlas = self.ent_horario_atlas.get().strip() or "07:30"
+        horario_sap = self.ent_horario_sap.get().strip() or "07:00"
+        intervalo = self.ent_intervalo_sap.get().strip() or "2"
+
+        if not re.match(r"^\d{1,2}:\d{2}$", horario_atlas) or not re.match(
+            r"^\d{1,2}:\d{2}$", horario_sap
+        ):
+            messagebox.showerror(
+                "Erro", "Formato de horário inválido. Use HH:MM (ex: 07:30)"
+            )
+            return
+
+        try:
+            intervalo_int = int(intervalo)
+            if not 1 <= intervalo_int <= 12:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                "Erro", "Intervalo SAP deve ser um número entre 1 e 12."
+            )
+            return
+
+        self.salvar_config(
+            horario_atlas=horario_atlas,
+            horario_sap_inicio=horario_sap,
+            intervalo_sap_h=intervalo,
+        )
+
+        # Monta o comando de launch (script ou exe)
+        if getattr(sys, "frozen", False):
+            exe = sys.executable
+            arg_a = f"{exe} --auto-atlas"
+            arg_s = f"{exe} --auto-sap"
+            wd = os.path.dirname(exe)
+        else:
+            exe = sys.executable
+            scr = os.path.abspath(sys.argv[0])
+            arg_a = f'{exe} "{scr}" --auto-atlas'
+            arg_s = f'{exe} "{scr}" --auto-sap'
+            wd = os.path.dirname(scr)
+
+        h_start = int(horario_sap.split(":")[0])
+        duration_h = max(1, 20 - h_start)
+
+        # Gera o Configurar_Agendamento.ps1 com as configurações atuais
+        if getattr(sys, "frozen", False):
+            proj_dir = os.path.dirname(sys.executable)
+        else:
+            proj_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+        ps_path = os.path.join(proj_dir, "Configurar_Agendamento.ps1")
+
+        # Argumentos que o Python vai receber (sem incluir o próprio executável)
+        arg_a_clean = arg_a.replace(exe, "").strip()
+        arg_s_clean = arg_s.replace(exe, "").strip()
+
+        ps_lines = [
+            "# =========================================================",
+            "# Mosaic RDE RPA - Configurador de Agendamento",
+            "# Execute com: clique direito > 'Executar com PowerShell'",
+            "# (Administrador necessario para registrar as tarefas)",
+            "# =========================================================",
+            "",
+            f"$Exe     = '{exe}'",
+            f"$ArgA    = '{arg_a_clean}'",
+            f"$ArgS    = '{arg_s_clean}'",
+            f"$WorkDir = '{wd}'",
+            "",
+            "if (-not (Test-Path $Exe)) { Write-Host 'ERRO: Python nao encontrado.' -ForegroundColor Red; pause; exit 1 }",
+            "",
+            f"# --- TAREFA 1: Atlas Diario (Seg-Sex {horario_atlas}) ---",
+            "$a1 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgA -WorkingDirectory $WorkDir",
+            f"$t1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '{horario_atlas}'",
+            "$s1 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable",
+            "Register-ScheduledTask -TaskName 'Mosaic RPA - Atlas Diario' -Action $a1 -Trigger $t1 -Settings $s1 -Force | Out-Null",
+            f"Write-Host '  [OK] Atlas Diario : Seg-Sex as {horario_atlas}' -ForegroundColor Green",
+            "",
+            f"# --- TAREFA 2: SAP a cada {intervalo_int}h (inicio {horario_sap}) ---",
+            "$a2 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgS -WorkingDirectory $WorkDir",
+            f"$t2 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '{horario_sap}'",
+            f"$rep = New-ScheduledTaskTrigger -Once -At '{horario_sap}' -RepetitionInterval (New-TimeSpan -Hours {intervalo_int}) -RepetitionDuration (New-TimeSpan -Hours {duration_h})",
+            "$t2.Repetition = $rep.Repetition",
+            "$s2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable",
+            "Register-ScheduledTask -TaskName 'Mosaic RPA - SAP 2h' -Action $a2 -Trigger $t2 -Settings $s2 -Force | Out-Null",
+            f"Write-Host '  [OK] SAP a cada {intervalo_int}h : Seg-Sex, {horario_sap} ate 20:00' -ForegroundColor Green",
+            "",
+            "Write-Host ''",
+            "Write-Host 'Agendamento configurado com sucesso!' -ForegroundColor Cyan",
+            "pause",
+        ]
+
+        try:
+            with open(ps_path, "w", encoding="utf-8-sig") as f:
+                f.write("\n".join(ps_lines))
+
+            # Abre o Explorer selecionando o arquivo gerado
+            subprocess.Popen(["explorer", f"/select,{ps_path}"])
+
+            self.adicionar_log(
+                "📁 'Configurar_Agendamento.ps1' atualizado com os horários definidos.",
+                "suc",
+            )
+            self.adicionar_log(
+                "➡ Solicite à TI para executar o arquivo como Administrador.", "ok"
+            )
+            self.adicionar_log(
+                f"   Atlas: {horario_atlas} | SAP: a cada {intervalo_int}h a partir de {horario_sap}",
+                "ok",
+            )
+        except Exception as e:
+            self.adicionar_log(f"Erro ao gerar arquivo: {str(e)}", "err")
 
     def executar_sap_passo1(self, Session):
         self.adicionar_log("SAP: Iniciando Passo 1 (Centros Relatório)...", "ok")
@@ -989,11 +1267,11 @@ class App(ctk.CTk):
 
                     if pos:
                         if click_type == "force":
-                            pyautogui.moveTo(pos.x, pos.y, duration=0.2)
+                            pyautogui.moveTo(pos.x, pos.y, duration=0.1)
                             pyautogui.mouseDown()
-                            time.sleep(0.1)
+                            time.sleep(0.05)
                             pyautogui.mouseUp()
-                            time.sleep(0.3)
+                            time.sleep(0.15)
                         elif double:
                             pyautogui.doubleClick(pos)
                         else:
@@ -1002,11 +1280,11 @@ class App(ctk.CTk):
                         return True
                 except:
                     pass
-                time.sleep(0.5)
+                time.sleep(0.2)
             if tentativa < max_tentativas:
                 self.adicionar_log("Timeout: Fechando possível pop-up...", "err")
                 pyautogui.press("esc")
-                time.sleep(2)
+                time.sleep(1.5)
         self.adicionar_log(f"ERRO: '{desc}' não encontrado.", "err")
         return False
 
@@ -1097,107 +1375,135 @@ class App(ctk.CTk):
                 if self.verificar_senha_incorreta():
                     return False
 
-            time.sleep(2)
+            time.sleep(1.5)
             return True
         except Exception as e:
             self.adicionar_log(f"Erro ao iniciar sessão Atlas: {str(e)}", "err")
             return False
 
+    def _abrir_menu_relatorios(self, unidade):
+        """Abre o menu Impressão → Relatórios com re-tentativa completa do ciclo"""
+        if unidade in ["CATALÃO", "PALMEIRANTE"]:
+            img_impressao = "assets/impressao_catalao.png"
+            img_relatorios = "assets/relatorio_catalao.png"
+        else:
+            img_impressao = "assets/impressao.png"
+            img_relatorios = "assets/relatorios.png"
+
+        for _ in range(4):
+            # Clica em Impressão (1 tentativa por ciclo — se não aparecer, problema maior)
+            if not self.clicar_img(
+                img_impressao,
+                "Impressão",
+                timeout=25,
+                click_type="force",
+                max_tentativas=1,
+            ):
+                return False
+            time.sleep(0.5)
+            # Procura Relatórios com 1 tentativa; se falhar, re-abre o menu
+            if self.clicar_img(
+                img_relatorios,
+                "Relatórios",
+                click_type="force",
+                timeout=15,
+                max_tentativas=1,
+            ):
+                return True
+            # Menu fechou antes de encontrar Relatórios — pressiona esc e recomeça
+            pyautogui.press("esc")
+            time.sleep(2)
+
+        return False
+
+    def _preencher_data_inicial(self):
+        """Preenche a data inicial com o primeiro dia do mês"""
+        hoje = datetime.now()
+        primeiro_dia = hoje.strftime("01/%m/%Y")
+
+        if self.clicar_img(
+            "assets/secao_data_inicial.png", "Data inicial", double=True
+        ):
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.press("backspace")
+            pyautogui.write(primeiro_dia)
+            pyautogui.press("tab")
+            for _ in range(3):
+                pyautogui.hotkey("ctrl", "a")
+                pyautogui.write("0")
+                pyautogui.press("tab")
+            return True
+        return False
+
+    def _selecionar_relatorio_tipo(self, unidade, modo):
+        """Seleciona o tipo de relatório (UBR, Balança, Recepção)"""
+        if modo == "Recepção":
+            recepcao_asset = RECEPCAO_ASSETS.get(unidade, "relatorio_recepcao.png")
+            return self.clicar_img(f"assets/{recepcao_asset}", "Relatório Recepção")
+        elif unidade == "UBERABA":
+            return self.clicar_img("assets/relatorios_ubr.png", "Relatórios UBR")
+        else:
+            return self.clicar_img("assets/relatordiariobal.png", "Relatório Balança")
+
+    def _selecionar_rota_ou_fluxo(self, unidade, modo_rota):
+        """Seleciona Rota ou Fluxo com fallback para RECEPÇÃO em maiúscula"""
+        if unidade in ["UBERABA", "RONDONÓPOLIS"]:
+            if self.clicar_img("assets/selectfluxo.png", "Fluxo"):
+                pyautogui.write(modo_rota)
+                pyautogui.press("down")
+                pyautogui.press("tab")
+                time.sleep(0.5)
+                return True
+            return False
+        else:
+            if self.clicar_img("assets/selectrota.png", "Rota"):
+                if modo_rota == "DESCARGA":
+                    # Para descarga, tenta Recepção ou RECEPÇÃO
+                    for img, nome in [
+                        ("assets/rota_descarga.png", "Recepção"),
+                        ("assets/rota_descarga2.png", "RECEPÇÃO"),
+                    ]:
+                        if self.clicar_img(img, nome, timeout=2, max_tentativas=1):
+                            return True
+                    return False
+                else:
+                    # Para carregamento, usa Expedição
+                    return self.clicar_img("assets/rota_exped.png", "Expedição")
+            return False
+
+    def _finalizar_relatorio(self):
+        """Finaliza gerando o relatório (Tipo saída, Excel, Gerar)"""
+        if not self.clicar_img("assets/selecttype.png", "Tipo saída"):
+            return False
+        time.sleep(0.5)
+        if not self.clicar_img("assets/tipo_excel.png", "Excel"):
+            return False
+        time.sleep(0.8)
+        return self.clicar_img("assets/gerar_relatorio.png", "Gerar")
+
     def executar_relatorio_atlas(self, unidade, modo_especifico):
         is_descarga = modo_especifico == "Descarga"
         is_recepcao = modo_especifico == "Recepção"
+        is_carregamento = modo_especifico == "Carregamento"
 
         try:
             # Garante estado limpo antes de navegar pelo menu
             pyautogui.press("esc")
-            time.sleep(1)
+            time.sleep(0.5)
+
+            hoje = datetime.now()
 
             # --- BLOCO DE DESCARGA ---
-            if modo_especifico == "Descarga":
-                if unidade in ["CATALÃO", "PALMEIRANTE"]:
-                    if not self.clicar_img(
-                        "assets/impressao_catalao.png",
-                        "Impressão",
-                        timeout=25,
-                        click_type="force",
-                    ):
-                        return False
-                    time.sleep(0.5)
-                    if not self.clicar_img(
-                        "assets/relatorio_catalao.png", "Relatórios", click_type="force"
-                    ):
-                        return False
-                else:
-                    if not self.clicar_img(
-                        "assets/impressao.png",
-                        "Impressão",
-                        timeout=25,
-                        click_type="force",
-                    ):
-                        return False
-                    time.sleep(0.5)
-                    if not self.clicar_img(
-                        "assets/relatorios.png", "Relatórios", click_type="force"
-                    ):
-                        return False
-
-                if unidade == "UBERABA":
-                    if not self.clicar_img(
-                        "assets/relatorios_ubr.png", "Relatórios UBR"
-                    ):
-                        return False
-                else:
-                    if not self.clicar_img(
-                        "assets/relatordiariobal.png", "Relatório Balança"
-                    ):
-                        return False
-
-                hoje = datetime.now()
-                primeiro_dia = hoje.strftime("01/%m/%Y")
-
-                if self.clicar_img(
-                    "assets/secao_data_inicial.png", "Data inicial", double=True
-                ):
-                    pyautogui.hotkey("ctrl", "a")
-                    pyautogui.press("backspace")
-                    pyautogui.write(primeiro_dia)
-                    pyautogui.press("tab")
-                    for _ in range(3):
-                        pyautogui.hotkey("ctrl", "a")
-                        pyautogui.write("0")
-                        pyautogui.press("tab")
-                else:
+            if is_descarga:
+                if not self._abrir_menu_relatorios(unidade):
                     return False
-
-                if unidade in ["UBERABA", "RONDONÓPOLIS"]:
-                    if self.clicar_img("assets/selectfluxo.png", "Fluxo"):
-                        pyautogui.write("DESCARGA")
-                        pyautogui.press("down")
-                        pyautogui.press("enter")
-                    else:
-                        return False
-                else:
-                    if self.clicar_img("assets/selectrota.png", "Rota"):
-                        achou = False
-                        for img, nome in [
-                            ("assets/rota_descarga.png", "Recepção"),
-                            ("assets/rota_descarga2.png", "RECEPÇÃO"),
-                        ]:
-                            if self.clicar_img(img, nome, timeout=2, max_tentativas=1):
-                                achou = True
-                                break
-                        if not achou:
-                            return False
-                    else:
-                        return False
-
-                if not self.clicar_img("assets/selecttype.png", "Tipo saída"):
+                if not self._selecionar_relatorio_tipo(unidade, "Descarga"):
                     return False
-                time.sleep(1)
-                if not self.clicar_img("assets/tipo_excel.png", "Excel"):
+                if not self._preencher_data_inicial():
                     return False
-                time.sleep(1.5)
-                if not self.clicar_img("assets/gerar_relatorio.png", "Gerar"):
+                if not self._selecionar_rota_ou_fluxo(unidade, "DESCARGA"):
+                    return False
+                if not self._finalizar_relatorio():
                     return False
                 if not self.mover_arquivo_atlas(
                     unidade, hoje.strftime("%m.%Y"), is_descarga
@@ -1206,152 +1512,53 @@ class App(ctk.CTk):
 
             # --- BLOCO DE RECEPÇÃO ---
             elif is_recepcao:
-                if unidade in ["CATALÃO", "PALMEIRANTE"]:
-                    if not self.clicar_img(
-                        "assets/impressao_catalao.png",
-                        "Impressão",
-                        timeout=25,
-                        click_type="force",
-                    ):
-                        return False
-                    time.sleep(0.5)
-                    if not self.clicar_img(
-                        "assets/relatorio_catalao.png", "Relatórios", click_type="force"
-                    ):
-                        return False
-                else:
-                    if not self.clicar_img(
-                        "assets/impressao.png",
-                        "Impressão",
-                        timeout=25,
-                        click_type="force",
-                    ):
-                        return False
-                    time.sleep(0.5)
-                    if not self.clicar_img(
-                        "assets/relatorios.png", "Relatórios", click_type="force"
-                    ):
-                        return False
-
-                recepcao_asset = RECEPCAO_ASSETS.get(unidade, "relatorio_recepcao.png")
-                if not self.clicar_img(
-                    f"assets/{recepcao_asset}", "Relatório Recepção"
-                ):
+                if not self._abrir_menu_relatorios(unidade):
                     return False
-
-                hoje = datetime.now()
-                primeiro_dia = hoje.strftime("01/%m/%Y")
-
-                if self.clicar_img(
-                    "assets/secao_data_inicial.png", "Data inicial", double=True
-                ):
-                    pyautogui.hotkey("ctrl", "a")
-                    pyautogui.press("backspace")
-                    pyautogui.write(primeiro_dia)
-                    pyautogui.press("tab")
-                    for _ in range(3):
-                        pyautogui.hotkey("ctrl", "a")
-                        pyautogui.write("0")
-                        pyautogui.press("tab")
-                else:
+                if not self._selecionar_relatorio_tipo(unidade, "Recepção"):
                     return False
-
-                if not self.clicar_img("assets/selecttype.png", "Tipo saída"):
+                if not self._preencher_data_inicial():
                     return False
-                time.sleep(1)
-                if not self.clicar_img("assets/tipo_excel.png", "Excel"):
-                    return False
-                time.sleep(1.5)
-                if not self.clicar_img("assets/gerar_relatorio.png", "Gerar"):
+                if not self._finalizar_relatorio():
                     return False
                 if not self.mover_arquivo_recepcao(unidade, hoje.strftime("%m.%Y")):
                     return False
 
             # --- BLOCO DE CARREGAMENTO ---
-            else:
-                hoje = datetime.now()
-                primeiro_dia = hoje.strftime("01/%m/%Y")
-
+            elif is_carregamento:
                 if unidade in ["UBERABA", "RONDONÓPOLIS"]:
-                    # No Ambos, após Descarga já ficamos na tela do relatório;
-                    # então não reabre menu nem refaz as datas para Carregamento.
-
-                    pos_fluxo = pyautogui.locateCenterOnScreen(
+                    pos_seta = pyautogui.locateCenterOnScreen(
                         "assets/seta_key.png", confidence=0.7
                     )
-                    if not pos_fluxo:
+                    if not pos_seta:
                         return False
-                    pyautogui.click(pos_fluxo)
+                    pyautogui.click(pos_seta)
                     time.sleep(0.3)
-                    pyautogui.click(pos_fluxo)
+                    pyautogui.click(pos_seta)
+                    time.sleep(0.3)
                     pyautogui.press("esc")
                     time.sleep(0.2)
                     pyautogui.write("CARREGAMENTO")
                     pyautogui.press("down")
-                    pyautogui.press("enter")
+                    if not self.clicar_img("assets/gerar_relatorio.png", "Gerar"):
+                        return False
+                    time.sleep(0.5)
                 else:
-                    if unidade in ["CATALÃO", "PALMEIRANTE"]:
-                        if not self.clicar_img(
-                            "assets/impressao_catalao.png",
-                            "Impressão",
-                            timeout=25,
-                            click_type="force",
-                        ):
-                            return False
-                        time.sleep(0.5)
-                        if not self.clicar_img(
-                            "assets/relatorio_catalao.png",
-                            "Relatórios",
-                            click_type="force",
-                        ):
-                            return False
-                    else:
-                        if not self.clicar_img(
-                            "assets/impressao.png",
-                            "Impressão",
-                            timeout=25,
-                            click_type="force",
-                        ):
-                            return False
-                        time.sleep(0.5)
-                        if not self.clicar_img(
-                            "assets/relatorios.png", "Relatórios", click_type="force"
-                        ):
-                            return False
-
+                    # Para as demais unidades, usa o fluxo novo com seta_keymax
+                    pos_seta = pyautogui.locateCenterOnScreen(
+                        "assets/seta_keymax.png", confidence=0.7
+                    )
+                    if not pos_seta:
+                        return False
+                    pyautogui.click(pos_seta)
+                    time.sleep(0.3)
                     if not self.clicar_img(
-                        "assets/relatordiariobal.png", "Relatório Balança"
+                        "assets/click_setamax.png", "Click Seta Max"
                     ):
                         return False
-
-                    if self.clicar_img(
-                        "assets/secao_data_inicial.png", "Data inicial", double=True
-                    ):
-                        pyautogui.hotkey("ctrl", "a")
-                        pyautogui.press("backspace")
-                        pyautogui.write(primeiro_dia)
-                        pyautogui.press("tab")
-                        for _ in range(3):
-                            pyautogui.hotkey("ctrl", "a")
-                            pyautogui.write("0")
-                            pyautogui.press("tab")
-                    else:
+                    if not self.clicar_img("assets/gerar_relatorio.png", "Gerar"):
                         return False
+                    time.sleep(0.5)
 
-                    if self.clicar_img("assets/selectrota.png", "Rota"):
-                        if not self.clicar_img("assets/rota_exped.png", "Expedição"):
-                            return False
-                    else:
-                        return False
-
-                if not self.clicar_img("assets/selecttype.png", "Tipo saída"):
-                    return False
-                time.sleep(1)
-                if not self.clicar_img("assets/tipo_excel.png", "Excel"):
-                    return False
-                time.sleep(1.5)
-                if not self.clicar_img("assets/gerar_relatorio.png", "Gerar"):
-                    return False
                 if not self.mover_arquivo_atlas(unidade, hoje.strftime("%m.%Y"), False):
                     return False
 
@@ -1499,8 +1706,91 @@ class App(ctk.CTk):
         return False
 
     # ==========================================
+    # BANDEJA DO SISTEMA (SYSTEM TRAY)
+    # ==========================================
+    def _criar_icone_tray(self):
+        size = 64
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle(
+            [0, 0, size - 1, size - 1], radius=14, fill=(59, 130, 246, 255)
+        )
+        w = (255, 255, 255, 255)
+        draw.rectangle([10, 12, 18, 52], fill=w)
+        draw.rectangle([46, 12, 54, 52], fill=w)
+        draw.polygon([(10, 12), (18, 12), (32, 33), (24, 33)], fill=w)
+        draw.polygon([(54, 12), (46, 12), (32, 33), (40, 33)], fill=w)
+        return img
+
+    def _setup_tray(self):
+        try:
+            icone = self._criar_icone_tray()
+            menu = pystray.Menu(
+                pystray.MenuItem("Abrir painel", self._tray_mostrar, default=True),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("▶ Executar Atlas agora", self._tray_run_atlas),
+                pystray.MenuItem("▶ Executar SAP agora", self._tray_run_sap),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Fechar", self._tray_sair),
+            )
+            self.tray_icon = pystray.Icon(
+                "MosaicRPA", icone, "Mosaic RDE RPA v2.1", menu
+            )
+            threading.Thread(target=self.tray_icon.run, daemon=True).start()
+        except Exception:
+            self.tray_icon = None
+
+    def _minimizar_para_tray(self):
+        self.withdraw()
+
+    def _tray_mostrar(self, icon=None, item=None):
+        self.after(0, self.deiconify)
+        self.after(0, self.lift)
+        self.after(0, self.focus_force)
+
+    def _tray_run_atlas(self, icon=None, item=None):
+        self._tray_mostrar()
+
+        def _run():
+            self.auto_mode = "atlas"
+            self.auto_close = False
+            self._auto_iniciar()
+
+        self.after(600, _run)
+
+    def _tray_run_sap(self, icon=None, item=None):
+        self._tray_mostrar()
+
+        def _run():
+            self.auto_mode = "sap"
+            self.auto_close = False
+            self._auto_iniciar()
+
+        self.after(600, _run)
+
+    def _tray_sair(self, icon=None, item=None):
+        try:
+            if self.tray_icon:
+                self.tray_icon.stop()
+        except Exception:
+            pass
+        self.after(0, self.destroy)
+
+    # ==========================================
     # GERENCIAMENTO DE EXECUÇÃO
     # ==========================================
+    def _auto_iniciar(self):
+        """Disparado automaticamente via --auto-atlas ou --auto-sap."""
+        if self.auto_mode == "atlas":
+            for chk in self.checkboxes.values():
+                chk.select()
+            self.modo_var.set("🔄 Ambos")
+            self.ao_mudar_modo("🔄 Ambos")
+        elif self.auto_mode == "sap":
+            for chk in self.sap_tasks.values():
+                chk.select()
+        self.start_thread()
+
     def start_thread(self):
         centros_atlas = [c for c, chk in self.checkboxes.items() if chk.get() == 1]
         passos_sap = [p for p, chk in self.sap_tasks.items() if chk.get() == 1]
@@ -1706,7 +1996,18 @@ class App(ctk.CTk):
         )
 
         if total > 0:
-            self.after(0, lambda: self.mostrar_resumo(total, suc, fal, lista_fal))
+            if self.auto_close:
+                try:
+                    if self.tray_icon:
+                        msg = "Concluído" if fal == 0 else f"{fal} falha(s)"
+                        self.tray_icon.notify(
+                            f"{msg} — {suc}/{total} tarefas OK", "Mosaic RDE RPA"
+                        )
+                except Exception:
+                    pass
+                self.after(5000, self.destroy)
+            else:
+                self.after(0, lambda: self.mostrar_resumo(total, suc, fal, lista_fal))
 
     def mostrar_resumo(self, total, sucessos, falhas, lista_falhas):
         modal = ctk.CTkToplevel(self)
@@ -1775,7 +2076,7 @@ class App(ctk.CTk):
             ).pack()
 
         if falhas > 0:
-            aviso = ctk.CTkFrame(corpo, fg_color="#FDECEA", corner_radius=8)
+            aviso = ctk.CTkFrame(corpo, fg_color="#2D0D0D", corner_radius=8)
             aviso.pack(fill="x", pady=(0, 15))
             ctk.CTkLabel(
                 aviso,
@@ -1797,13 +2098,13 @@ class App(ctk.CTk):
             text="Entendido 👍",
             height=40,
             fg_color=COR_TEXTO,
-            hover_color="#333",
+            hover_color="#C8C8D8",
             command=modal.destroy,
         ).pack(side="bottom", pady=0, padx=20, fill="x")
 
 
 if __name__ == "__main__":
-    ctk.set_appearance_mode("light")
+    ctk.set_appearance_mode("dark")
     try:
         App().mainloop()
     except Exception as e:
