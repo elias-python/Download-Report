@@ -106,6 +106,85 @@ class App(ctk.CTk):
         self._build_ui()
         self.atualizar_relogio()
         self.ao_mudar_modo(self.modo_var.get())
+        self.after(350, self.mostrar_aviso_resolucao)
+
+    def abrir_configuracoes_tela(self):
+        try:
+            subprocess.run("start ms-settings:display", shell=True, check=False)
+        except Exception as e:
+            messagebox.showerror(
+                "Erro",
+                f"Não foi possível abrir as configurações de tela automaticamente.\n\nDetalhe: {str(e)}",
+            )
+
+    def mostrar_aviso_resolucao(self):
+        modal = ctk.CTkToplevel(self)
+        modal.title("Ajuste de Tela Recomendado")
+        modal.geometry("520x280")
+        modal.resizable(False, False)
+        modal.configure(fg_color=COR_FUNDO)
+        modal.transient(self)
+        modal.grab_set()
+
+        ctk.CTkLabel(
+            modal,
+            text="Antes de iniciar, confira a tela em 100%",
+            font=("Segoe UI", 18, "bold"),
+            text_color=COR_TEXTO,
+        ).pack(anchor="w", padx=20, pady=(20, 8))
+
+        ctk.CTkLabel(
+            modal,
+            text=(
+                "Para evitar erros de clique no OCR, ajuste a Escala do Windows para 100% "
+                "(e, se necessário, revise também a resolução)."
+            ),
+            font=("Segoe UI", 12),
+            text_color=COR_MUTED,
+            justify="left",
+            wraplength=475,
+        ).pack(anchor="w", padx=20, pady=(0, 14))
+
+        dica = ctk.CTkFrame(
+            modal,
+            fg_color=COR_CARD,
+            corner_radius=10,
+            border_width=1,
+            border_color=COR_BORDA,
+        )
+        dica.pack(fill="x", padx=20, pady=(0, 16))
+
+        ctk.CTkLabel(
+            dica,
+            text="Caminho rápido: Configurações > Sistema > Tela > Escala = 100%",
+            font=("Consolas", 11),
+            text_color=COR_TEXTO,
+            justify="left",
+            wraplength=455,
+        ).pack(anchor="w", padx=12, pady=12)
+
+        botoes = ctk.CTkFrame(modal, fg_color="transparent")
+        botoes.pack(fill="x", padx=20, pady=(0, 20))
+
+        ctk.CTkButton(
+            botoes,
+            text="Abrir Configurações de Tela",
+            height=38,
+            fg_color=COR_SAP,
+            hover_color="#007BB5",
+            command=self.abrir_configuracoes_tela,
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            botoes,
+            text="Continuar",
+            height=38,
+            fg_color=COR_TEXTO,
+            hover_color="#333333",
+            command=modal.destroy,
+        ).pack(side="right")
+
+        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
 
     def carregar_config(self):
         if os.path.exists(ARQUIVO_CONFIG):
@@ -855,23 +934,30 @@ class App(ctk.CTk):
     # LÓGICA DO MÓDULO ATLAS (COM SUPORTE A RECEPÇÃO)
     # ==========================================
     def verificar_senha_incorreta(self):
-        """Verifica se o asset de aviso de senha incorreta está na tela"""
-        if self.clicar_img(
-            "assets/aviso_senha_incorreta.png",
-            "Aviso de Senha Incorreta",
-            timeout=3,
-            max_tentativas=1,
-        ):
-            self.adicionar_log(
-                "⚠️ AVISO: Senha incorreta! Clicando em OK e continuando...", "err"
+        """Verifica silenciosamente se apareceu o aviso de senha incorreta."""
+        try:
+            pos = pyautogui.locateCenterOnScreen(
+                "assets/aviso_senha_incorreta.png", confidence=0.7, minSearchTime=3
             )
-            self.senha_incorreta = True
-            # Clica no botão OK do aviso
-            if self.clicar_img(
-                "assets/ok_senha_incorreta.png", "Botão OK", timeout=2, max_tentativas=1
-            ):
-                time.sleep(1)
+            if pos:
+                self.adicionar_log(
+                    "⚠️ AVISO: Senha incorreta! Clicando em OK...", "err"
+                )
+                self.senha_incorreta = True
+                try:
+                    pos_ok = pyautogui.locateCenterOnScreen(
+                        "assets/ok_senha_incorreta.png",
+                        confidence=0.7,
+                        minSearchTime=2,
+                    )
+                    if pos_ok:
+                        pyautogui.click(pos_ok)
+                        time.sleep(1)
+                except Exception:
+                    pass
                 return True
+        except Exception:
+            pass
         return False
 
     def clicar_img(
@@ -936,11 +1022,7 @@ class App(ctk.CTk):
         except:
             pass
 
-    def executar_robo_atlas(self, unidade, modo_especifico):
-        is_descarga = modo_especifico == "Descarga"
-        is_recepcao = modo_especifico == "Recepção"
-        user_atual = self.ent_user.get().strip()
-        pass_atual = self.ent_pass.get().strip()
+    def iniciar_sessao_atlas(self, unidade, user_atual, pass_atual):
         self.senha_incorreta = False
 
         try:
@@ -971,7 +1053,6 @@ class App(ctk.CTk):
                 else:
                     return False
 
-                # Verifica senha incorreta
                 if self.verificar_senha_incorreta():
                     return False
 
@@ -1013,29 +1094,51 @@ class App(ctk.CTk):
                 else:
                     return False
 
-                # Verifica senha incorreta
                 if self.verificar_senha_incorreta():
                     return False
 
             time.sleep(2)
+            return True
+        except Exception as e:
+            self.adicionar_log(f"Erro ao iniciar sessão Atlas: {str(e)}", "err")
+            return False
+
+    def executar_relatorio_atlas(self, unidade, modo_especifico):
+        is_descarga = modo_especifico == "Descarga"
+        is_recepcao = modo_especifico == "Recepção"
+
+        try:
+            # Garante estado limpo antes de navegar pelo menu
+            pyautogui.press("esc")
+            time.sleep(1)
 
             # --- BLOCO DE DESCARGA ---
             if modo_especifico == "Descarga":
                 if unidade in ["CATALÃO", "PALMEIRANTE"]:
                     if not self.clicar_img(
-                        "assets/impressao_catalao.png", "Impressão", timeout=25
+                        "assets/impressao_catalao.png",
+                        "Impressão",
+                        timeout=25,
+                        click_type="force",
                     ):
                         return False
+                    time.sleep(0.5)
                     if not self.clicar_img(
-                        "assets/relatorio_catalao.png", "Relatórios"
+                        "assets/relatorio_catalao.png", "Relatórios", click_type="force"
                     ):
                         return False
                 else:
                     if not self.clicar_img(
-                        "assets/impressao.png", "Impressão", timeout=25
+                        "assets/impressao.png",
+                        "Impressão",
+                        timeout=25,
+                        click_type="force",
                     ):
                         return False
-                    if not self.clicar_img("assets/relatorios.png", "Relatórios"):
+                    time.sleep(0.5)
+                    if not self.clicar_img(
+                        "assets/relatorios.png", "Relatórios", click_type="force"
+                    ):
                         return False
 
                 if unidade == "UBERABA":
@@ -1105,29 +1208,37 @@ class App(ctk.CTk):
             elif is_recepcao:
                 if unidade in ["CATALÃO", "PALMEIRANTE"]:
                     if not self.clicar_img(
-                        "assets/impressao_catalao.png", "Impressão", timeout=25
+                        "assets/impressao_catalao.png",
+                        "Impressão",
+                        timeout=25,
+                        click_type="force",
                     ):
                         return False
+                    time.sleep(0.5)
                     if not self.clicar_img(
-                        "assets/relatorio_catalao.png", "Relatórios"
+                        "assets/relatorio_catalao.png", "Relatórios", click_type="force"
                     ):
                         return False
                 else:
                     if not self.clicar_img(
-                        "assets/impressao.png", "Impressão", timeout=25
+                        "assets/impressao.png",
+                        "Impressão",
+                        timeout=25,
+                        click_type="force",
                     ):
                         return False
-                    if not self.clicar_img("assets/relatorios.png", "Relatórios"):
+                    time.sleep(0.5)
+                    if not self.clicar_img(
+                        "assets/relatorios.png", "Relatórios", click_type="force"
+                    ):
                         return False
 
-                # Clica no relatório de recepção específico da unidade
                 recepcao_asset = RECEPCAO_ASSETS.get(unidade, "relatorio_recepcao.png")
                 if not self.clicar_img(
                     f"assets/{recepcao_asset}", "Relatório Recepção"
                 ):
                     return False
 
-                # Define as datas e configurações
                 hoje = datetime.now()
                 primeiro_dia = hoje.strftime("01/%m/%Y")
 
@@ -1145,7 +1256,6 @@ class App(ctk.CTk):
                 else:
                     return False
 
-                # Seleciona tipo de saída (Excel)
                 if not self.clicar_img("assets/selecttype.png", "Tipo saída"):
                     return False
                 time.sleep(1)
@@ -1159,53 +1269,75 @@ class App(ctk.CTk):
 
             # --- BLOCO DE CARREGAMENTO ---
             else:
-                if unidade in ["CATALÃO", "PALMEIRANTE"]:
-                    if not self.clicar_img(
-                        "assets/impressao_catalao.png", "Impressão", timeout=25
-                    ):
-                        return False
-                    if not self.clicar_img(
-                        "assets/relatorio_catalao.png", "Relatórios"
-                    ):
-                        return False
-                else:
-                    if not self.clicar_img(
-                        "assets/impressao.png", "Impressão", timeout=25
-                    ):
-                        return False
-                    if not self.clicar_img("assets/relatorios.png", "Relatórios"):
-                        return False
-
-                if not self.clicar_img(
-                    "assets/relatordiariobal.png", "Relatório Balança"
-                ):
-                    return False
-
                 hoje = datetime.now()
                 primeiro_dia = hoje.strftime("01/%m/%Y")
 
-                if self.clicar_img(
-                    "assets/secao_data_inicial.png", "Data inicial", double=True
-                ):
-                    pyautogui.hotkey("ctrl", "a")
-                    pyautogui.press("backspace")
-                    pyautogui.write(primeiro_dia)
-                    pyautogui.press("tab")
-                    for _ in range(3):
-                        pyautogui.hotkey("ctrl", "a")
-                        pyautogui.write("0")
-                        pyautogui.press("tab")
-                else:
-                    return False
-
                 if unidade in ["UBERABA", "RONDONÓPOLIS"]:
-                    if self.clicar_img("assets/selectfluxo.png", "Fluxo"):
-                        pyautogui.write("CARREGAMENTO")
-                        pyautogui.press("down")
-                        pyautogui.press("enter")
+                    # No Ambos, após Descarga já ficamos na tela do relatório;
+                    # então não reabre menu nem refaz as datas para Carregamento.
+
+                    pos_fluxo = pyautogui.locateCenterOnScreen(
+                        "assets/seta_key.png", confidence=0.7
+                    )
+                    if not pos_fluxo:
+                        return False
+                    pyautogui.click(pos_fluxo)
+                    time.sleep(0.3)
+                    pyautogui.click(pos_fluxo)
+                    pyautogui.press("esc")
+                    time.sleep(0.2)
+                    pyautogui.write("CARREGAMENTO")
+                    pyautogui.press("down")
+                    pyautogui.press("enter")
+                else:
+                    if unidade in ["CATALÃO", "PALMEIRANTE"]:
+                        if not self.clicar_img(
+                            "assets/impressao_catalao.png",
+                            "Impressão",
+                            timeout=25,
+                            click_type="force",
+                        ):
+                            return False
+                        time.sleep(0.5)
+                        if not self.clicar_img(
+                            "assets/relatorio_catalao.png",
+                            "Relatórios",
+                            click_type="force",
+                        ):
+                            return False
+                    else:
+                        if not self.clicar_img(
+                            "assets/impressao.png",
+                            "Impressão",
+                            timeout=25,
+                            click_type="force",
+                        ):
+                            return False
+                        time.sleep(0.5)
+                        if not self.clicar_img(
+                            "assets/relatorios.png", "Relatórios", click_type="force"
+                        ):
+                            return False
+
+                    if not self.clicar_img(
+                        "assets/relatordiariobal.png", "Relatório Balança"
+                    ):
+                        return False
+
+                    if self.clicar_img(
+                        "assets/secao_data_inicial.png", "Data inicial", double=True
+                    ):
+                        pyautogui.hotkey("ctrl", "a")
+                        pyautogui.press("backspace")
+                        pyautogui.write(primeiro_dia)
+                        pyautogui.press("tab")
+                        for _ in range(3):
+                            pyautogui.hotkey("ctrl", "a")
+                            pyautogui.write("0")
+                            pyautogui.press("tab")
                     else:
                         return False
-                else:
+
                     if self.clicar_img("assets/selectrota.png", "Rota"):
                         if not self.clicar_img("assets/rota_exped.png", "Expedição"):
                             return False
@@ -1225,8 +1357,17 @@ class App(ctk.CTk):
 
             return True
         except Exception as e:
-            self.adicionar_log(f"Erro: {str(e)}", "err")
+            self.adicionar_log(
+                f"Erro ao gerar relatório ({modo_especifico}): {str(e)}", "err"
+            )
             return False
+
+    def executar_robo_atlas(self, unidade, modo_especifico):
+        user_atual = self.ent_user.get().strip()
+        pass_atual = self.ent_pass.get().strip()
+        if not self.iniciar_sessao_atlas(unidade, user_atual, pass_atual):
+            return False
+        return self.executar_relatorio_atlas(unidade, modo_especifico)
 
     def mover_arquivo_atlas(self, unidade, mes_ano, is_descarga):
         tempo_inicio = time.time()
@@ -1448,22 +1589,58 @@ class App(ctk.CTk):
         if centros_atlas:
             self.adicionar_log("--- INICIANDO ROTINA ATLAS ---", "ok")
             for centro in centros_atlas:
-                for modo in modos_a_rodar:
-                    if not self.executando:
-                        break
-                    contador += 1
-                    self._set_unidade_status(
-                        f"[{contador}/{total_tarefas}] Atlas: {centro} ({modo})"
-                    )
-                    self.adicionar_log(f"\n--- Atlas: {centro} | {modo} ---")
+                if "Ambos" in modo_geral:
+                    user_atual = self.ent_user.get().strip()
+                    pass_atual = self.ent_pass.get().strip()
 
-                    if self.executar_robo_atlas(centro, modo):
-                        sucessos += 1
+                    self.adicionar_log(
+                        f"\n--- Atlas: {centro} | Login único para 3 relatórios ---"
+                    )
+
+                    if self.iniciar_sessao_atlas(centro, user_atual, pass_atual):
+                        for modo in modos_a_rodar:
+                            if not self.executando:
+                                break
+
+                            contador += 1
+                            self._set_unidade_status(
+                                f"[{contador}/{total_tarefas}] Atlas: {centro} ({modo})"
+                            )
+                            self.adicionar_log(f"--- Atlas: {centro} | {modo} ---")
+
+                            if self.executar_relatorio_atlas(centro, modo):
+                                sucessos += 1
+                            else:
+                                falhas += 1
+                                lista_falhas.append(f"Atlas: {centro} ({modo})")
                     else:
-                        falhas += 1
-                        lista_falhas.append(f"Atlas: {centro} ({modo})")
+                        for modo in modos_a_rodar:
+                            contador += 1
+                            self._set_unidade_status(
+                                f"[{contador}/{total_tarefas}] Atlas: {centro} ({modo})"
+                            )
+                            falhas += 1
+                            lista_falhas.append(f"Atlas: {centro} ({modo})")
+
                     self.fechar_atlas()
                     time.sleep(1)
+                else:
+                    for modo in modos_a_rodar:
+                        if not self.executando:
+                            break
+                        contador += 1
+                        self._set_unidade_status(
+                            f"[{contador}/{total_tarefas}] Atlas: {centro} ({modo})"
+                        )
+                        self.adicionar_log(f"\n--- Atlas: {centro} | {modo} ---")
+
+                        if self.executar_robo_atlas(centro, modo):
+                            sucessos += 1
+                        else:
+                            falhas += 1
+                            lista_falhas.append(f"Atlas: {centro} ({modo})")
+                        self.fechar_atlas()
+                        time.sleep(1)
 
         # --- ROTINA SAP ---
         if passos_sap and self.executando:
