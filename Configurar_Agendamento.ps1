@@ -11,21 +11,21 @@ $WorkDir = 'c:\Users\esantan3\OneDrive - The Mosaic Company\Área de Trabalho\Pr
 
 if (-not (Test-Path $Exe)) { Write-Host 'ERRO: Python nao encontrado.' -ForegroundColor Red; pause; exit 1 }
 
-# --- TAREFA 1: Atlas Diario (Seg-Sex 07:30) ---
+# --- TAREFA 1: Atlas Diario (Seg-Sex 08:00) ---
 $a1 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgA -WorkingDirectory $WorkDir
-$t1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '07:30'
+$t1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '08:00'
 $s1 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable
 Register-ScheduledTask -TaskName 'Mosaic RPA - Atlas Diario' -Action $a1 -Trigger $t1 -Settings $s1 -Force | Out-Null
-Write-Host '  [OK] Atlas Diario : Seg-Sex as 07:30' -ForegroundColor Green
+Write-Host '  [OK] Atlas Diario : Seg-Sex as 08:00' -ForegroundColor Green
 
-# --- TAREFA 2: SAP a cada 2h (inicio 16:18) ---
+# --- TAREFA 2: SAP a cada 2h (inicio 08:00) ---
 $a2 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgS -WorkingDirectory $WorkDir
-$t2 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '16:18'
-$rep = New-ScheduledTaskTrigger -Once -At '16:18' -RepetitionInterval (New-TimeSpan -Hours 2) -RepetitionDuration (New-TimeSpan -Hours 4)
+$t2 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '08:00'
+$rep = New-ScheduledTaskTrigger -Once -At '08:00' -RepetitionInterval (New-TimeSpan -Hours 2) -RepetitionDuration (New-TimeSpan -Hours 12)
 $t2.Repetition = $rep.Repetition
 $s2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable
 Register-ScheduledTask -TaskName 'Mosaic RPA - SAP 2h' -Action $a2 -Trigger $t2 -Settings $s2 -Force | Out-Null
-Write-Host '  [OK] SAP a cada 2h : Seg-Sex, 16:18 ate 20:00' -ForegroundColor Green
+Write-Host '  [OK] SAP a cada 2h : Seg-Sex, 08:00 ate 20:00' -ForegroundColor Green
 
 Write-Host ''
 Write-Host 'Agendamento configurado com sucesso!' -ForegroundColor Cyan

@@ -86,18 +86,14 @@ RECEPCAO_ASSETS = {
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Mosaic RDE RPA v2.1")
+        self.title("Mosaic RDE RPA")
         self.geometry("680x880")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
 
         self.executando = False
         self.senha_incorreta = False
-        self.auto_mode = (
-            "atlas"
-            if "--auto-atlas" in sys.argv
-            else "sap" if "--auto-sap" in sys.argv else None
-        )
+        self.auto_mode = None
 
         config_data = self.carregar_config()
         self.caminho_descarga = config_data.get("caminho_descarga", "")
@@ -109,11 +105,8 @@ class App(ctk.CTk):
         self.user_atlas = config_data.get("user_atlas", "")
         self.pass_atlas = config_data.get("pass_atlas", "")
         self.ultima_att = config_data.get("ultima_att", "Nunca")
-        self.horario_atlas = config_data.get("horario_atlas", "07:30")
-        self.horario_sap_inicio = config_data.get("horario_sap_inicio", "07:00")
-        self.intervalo_sap_h = config_data.get("intervalo_sap_h", "2")
 
-        self.auto_close = self.auto_mode is not None
+        self.auto_close = False
 
         self.modo_var = ctk.StringVar(value="Descarga")
         self.tema_atual = TEMA_DESCARGA
@@ -125,12 +118,7 @@ class App(ctk.CTk):
         self._keepalive_stop = threading.Event()
         threading.Thread(target=self._keepalive_sap, daemon=True).start()
         self.protocol("WM_DELETE_WINDOW", self._minimizar_para_tray)
-        self.after(2000, self._verificar_agendamento)
-        if self.auto_mode:
-            self.withdraw()
-            self.after(1500, self._auto_iniciar)
-        else:
-            self.after(350, self.mostrar_aviso_resolucao)
+        self.after(350, self.mostrar_aviso_resolucao)
 
     def abrir_configuracoes_tela(self):
         try:
@@ -466,7 +454,6 @@ class App(ctk.CTk):
         self.tabview.pack(fill="x", padx=P, pady=(6, 0))
         self.tabview.add("🌐  Atlas")
         self.tabview.add("⚙  SAP")
-        self.tabview.add("⏰  Agenda")
 
         # ── ABA ATLAS ─────────────────────────────────────────
         tab_atlas = self.tabview.tab("🌐  Atlas")
@@ -653,86 +640,6 @@ class App(ctk.CTk):
             )
             chk.pack(anchor="w", padx=12, pady=3)
             self.sap_tasks[key] = chk
-
-        # ── ABA AGENDA ───────────────────────────────────────
-        tab_agenda = self.tabview.tab("⏰  Agenda")
-        ctk.CTkLabel(
-            tab_agenda,
-            text="Execução automática via Windows Task Scheduler",
-            font=("Segoe UI", 10),
-            text_color=COR_MUTED,
-        ).pack(anchor="w", padx=8, pady=(10, 6))
-
-        card_agenda = ctk.CTkFrame(
-            tab_agenda,
-            fg_color=COR_FUNDO,
-            corner_radius=6,
-            border_width=1,
-            border_color=COR_BORDA,
-        )
-        card_agenda.pack(fill="x", padx=6, pady=(0, 8))
-
-        row_a = ctk.CTkFrame(card_agenda, fg_color="transparent")
-        row_a.pack(fill="x", padx=10, pady=(10, 4))
-        ctk.CTkLabel(
-            row_a, text="Atlas", font=("Segoe UI", 11), width=70, anchor="w"
-        ).pack(side="left")
-        ctk.CTkLabel(
-            row_a, text="às", font=("Segoe UI", 11), text_color=COR_MUTED
-        ).pack(side="left", padx=(0, 6))
-        self.ent_horario_atlas = ctk.CTkEntry(
-            row_a, width=62, height=26, placeholder_text="07:30"
-        )
-        self.ent_horario_atlas.insert(0, self.horario_atlas)
-        self.ent_horario_atlas.pack(side="left")
-        ctk.CTkLabel(
-            row_a, text="  Seg–Sex", font=("Segoe UI", 10), text_color=COR_MUTED
-        ).pack(side="left")
-
-        row_s = ctk.CTkFrame(card_agenda, fg_color="transparent")
-        row_s.pack(fill="x", padx=10, pady=(0, 4))
-        ctk.CTkLabel(
-            row_s, text="SAP", font=("Segoe UI", 11), width=70, anchor="w"
-        ).pack(side="left")
-        ctk.CTkLabel(
-            row_s, text="a cada", font=("Segoe UI", 11), text_color=COR_MUTED
-        ).pack(side="left", padx=(0, 4))
-        self.ent_intervalo_sap = ctk.CTkEntry(
-            row_s, width=34, height=26, placeholder_text="2"
-        )
-        self.ent_intervalo_sap.insert(0, self.intervalo_sap_h)
-        self.ent_intervalo_sap.pack(side="left")
-        ctk.CTkLabel(
-            row_s, text="h  início às", font=("Segoe UI", 11), text_color=COR_MUTED
-        ).pack(side="left", padx=(4, 4))
-        self.ent_horario_sap = ctk.CTkEntry(
-            row_s, width=62, height=26, placeholder_text="07:00"
-        )
-        self.ent_horario_sap.insert(0, self.horario_sap_inicio)
-        self.ent_horario_sap.pack(side="left")
-        ctk.CTkLabel(
-            row_s, text="  Seg–Sex", font=("Segoe UI", 10), text_color=COR_MUTED
-        ).pack(side="left")
-
-        row_st = ctk.CTkFrame(card_agenda, fg_color="transparent")
-        row_st.pack(fill="x", padx=10, pady=(4, 10))
-        self.lbl_agenda_status = ctk.CTkLabel(
-            row_st,
-            text="○ Verificando...",
-            font=("Segoe UI", 10),
-            text_color=COR_MUTED,
-        )
-        self.lbl_agenda_status.pack(side="left")
-        ctk.CTkButton(
-            row_st,
-            text="Configurar agendamento",
-            width=170,
-            height=26,
-            fg_color=COR_SAP,
-            hover_color="#2563EB",
-            font=("Segoe UI", 11),
-            command=self.configurar_agendamento,
-        ).pack(side="right")
 
         # ── STATUS + BOTÃO ────────────────────────────────────────
         self.lbl_unidade_status = ctk.CTkLabel(
@@ -1000,152 +907,13 @@ class App(ctk.CTk):
         return False
 
     # ==========================================
-    # AGENDAMENTO DO WINDOWS TASK SCHEDULER
+    # (Agendamento removido nesta versão)
     # ==========================================
     def _verificar_agendamento(self):
-        """Verifica se as tarefas já estão registradas e atualiza o status."""
-        try:
-            result = subprocess.run(
-                [
-                    "powershell",
-                    "-Command",
-                    "Get-ScheduledTask -TaskName 'Mosaic RPA - Atlas Diario'"
-                    " -ErrorAction SilentlyContinue"
-                    " | Select-Object -ExpandProperty State",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=6,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                self.lbl_agenda_status.configure(
-                    text="● Agendamento ativo", text_color=COR_SUCCESS
-                )
-            else:
-                self.lbl_agenda_status.configure(
-                    text="○ Não configurado", text_color=COR_MUTED
-                )
-        except Exception:
-            self.lbl_agenda_status.configure(
-                text="○ Status desconhecido", text_color=COR_MUTED
-            )
+        pass
 
     def configurar_agendamento(self):
-        """Cria/atualiza as tarefas no Agendador de Tarefas do Windows."""
-        import re
-        import tempfile
-
-        horario_atlas = self.ent_horario_atlas.get().strip() or "07:30"
-        horario_sap = self.ent_horario_sap.get().strip() or "07:00"
-        intervalo = self.ent_intervalo_sap.get().strip() or "2"
-
-        if not re.match(r"^\d{1,2}:\d{2}$", horario_atlas) or not re.match(
-            r"^\d{1,2}:\d{2}$", horario_sap
-        ):
-            messagebox.showerror(
-                "Erro", "Formato de horário inválido. Use HH:MM (ex: 07:30)"
-            )
-            return
-
-        try:
-            intervalo_int = int(intervalo)
-            if not 1 <= intervalo_int <= 12:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror(
-                "Erro", "Intervalo SAP deve ser um número entre 1 e 12."
-            )
-            return
-
-        self.salvar_config(
-            horario_atlas=horario_atlas,
-            horario_sap_inicio=horario_sap,
-            intervalo_sap_h=intervalo,
-        )
-
-        # Monta o comando de launch (script ou exe)
-        if getattr(sys, "frozen", False):
-            exe = sys.executable
-            arg_a = f"{exe} --auto-atlas"
-            arg_s = f"{exe} --auto-sap"
-            wd = os.path.dirname(exe)
-        else:
-            exe = sys.executable
-            scr = os.path.abspath(sys.argv[0])
-            arg_a = f'{exe} "{scr}" --auto-atlas'
-            arg_s = f'{exe} "{scr}" --auto-sap'
-            wd = os.path.dirname(scr)
-
-        h_start = int(horario_sap.split(":")[0])
-        duration_h = max(1, 20 - h_start)
-
-        # Gera o Configurar_Agendamento.ps1 com as configurações atuais
-        if getattr(sys, "frozen", False):
-            proj_dir = os.path.dirname(sys.executable)
-        else:
-            proj_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-        ps_path = os.path.join(proj_dir, "Configurar_Agendamento.ps1")
-
-        # Argumentos que o Python vai receber (sem incluir o próprio executável)
-        arg_a_clean = arg_a.replace(exe, "").strip()
-        arg_s_clean = arg_s.replace(exe, "").strip()
-
-        ps_lines = [
-            "# =========================================================",
-            "# Mosaic RDE RPA - Configurador de Agendamento",
-            "# Execute com: clique direito > 'Executar com PowerShell'",
-            "# (Administrador necessario para registrar as tarefas)",
-            "# =========================================================",
-            "",
-            f"$Exe     = '{exe}'",
-            f"$ArgA    = '{arg_a_clean}'",
-            f"$ArgS    = '{arg_s_clean}'",
-            f"$WorkDir = '{wd}'",
-            "",
-            "if (-not (Test-Path $Exe)) { Write-Host 'ERRO: Python nao encontrado.' -ForegroundColor Red; pause; exit 1 }",
-            "",
-            f"# --- TAREFA 1: Atlas Diario (Seg-Sex {horario_atlas}) ---",
-            "$a1 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgA -WorkingDirectory $WorkDir",
-            f"$t1 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '{horario_atlas}'",
-            "$s1 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable",
-            "Register-ScheduledTask -TaskName 'Mosaic RPA - Atlas Diario' -Action $a1 -Trigger $t1 -Settings $s1 -Force | Out-Null",
-            f"Write-Host '  [OK] Atlas Diario : Seg-Sex as {horario_atlas}' -ForegroundColor Green",
-            "",
-            f"# --- TAREFA 2: SAP a cada {intervalo_int}h (inicio {horario_sap}) ---",
-            "$a2 = New-ScheduledTaskAction -Execute $Exe -Argument $ArgS -WorkingDirectory $WorkDir",
-            f"$t2 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '{horario_sap}'",
-            f"$rep = New-ScheduledTaskTrigger -Once -At '{horario_sap}' -RepetitionInterval (New-TimeSpan -Hours {intervalo_int}) -RepetitionDuration (New-TimeSpan -Hours {duration_h})",
-            "$t2.Repetition = $rep.Repetition",
-            "$s2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -StartWhenAvailable",
-            "Register-ScheduledTask -TaskName 'Mosaic RPA - SAP 2h' -Action $a2 -Trigger $t2 -Settings $s2 -Force | Out-Null",
-            f"Write-Host '  [OK] SAP a cada {intervalo_int}h : Seg-Sex, {horario_sap} ate 20:00' -ForegroundColor Green",
-            "",
-            "Write-Host ''",
-            "Write-Host 'Agendamento configurado com sucesso!' -ForegroundColor Cyan",
-            "pause",
-        ]
-
-        try:
-            with open(ps_path, "w", encoding="utf-8-sig") as f:
-                f.write("\n".join(ps_lines))
-
-            # Abre o Explorer selecionando o arquivo gerado
-            subprocess.Popen(["explorer", f"/select,{ps_path}"])
-
-            self.adicionar_log(
-                "📁 'Configurar_Agendamento.ps1' atualizado com os horários definidos.",
-                "suc",
-            )
-            self.adicionar_log(
-                "➡ Solicite à TI para executar o arquivo como Administrador.", "ok"
-            )
-            self.adicionar_log(
-                f"   Atlas: {horario_atlas} | SAP: a cada {intervalo_int}h a partir de {horario_sap}",
-                "ok",
-            )
-        except Exception as e:
-            self.adicionar_log(f"Erro ao gerar arquivo: {str(e)}", "err")
+        pass
 
     def executar_sap_passo1(self, Session):
         self.adicionar_log("SAP: Iniciando Passo 1 (Centros Relatório)...", "ok")
@@ -1925,8 +1693,16 @@ class App(ctk.CTk):
         self.start_thread()
 
     def start_thread(self):
-        centros_atlas = [c for c, chk in self.checkboxes.items() if chk.get() == 1]
-        passos_sap = [p for p, chk in self.sap_tasks.items() if chk.get() == 1]
+        aba_ativa = self.tabview.get()  # retorna o nome da aba ativa
+        if aba_ativa == "🌐  Atlas":
+            centros_atlas = [c for c, chk in self.checkboxes.items() if chk.get() == 1]
+            passos_sap = []
+        elif aba_ativa == "⚙  SAP":
+            centros_atlas = []
+            passos_sap = [p for p, chk in self.sap_tasks.items() if chk.get() == 1]
+        else:
+            centros_atlas = [c for c, chk in self.checkboxes.items() if chk.get() == 1]
+            passos_sap = [p for p, chk in self.sap_tasks.items() if chk.get() == 1]
 
         if not centros_atlas and not passos_sap:
             messagebox.showwarning(
