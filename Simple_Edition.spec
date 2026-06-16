@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files
+
 
 a = Analysis(
     ['Simple_Edition.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('assets', 'assets'), *collect_data_files('customtkinter')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -21,7 +23,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Simple_Edition',
+    name='RDE - Report',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -41,5 +43,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Simple_Edition',
+    name='RDE - Report',
 )

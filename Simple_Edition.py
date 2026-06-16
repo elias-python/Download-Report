@@ -9,8 +9,6 @@ from datetime import datetime, timedelta
 import threading
 from tkinter import messagebox, filedialog
 import sys
-import pystray
-from PIL import Image, ImageDraw
 import win32com.client
 import win32gui
 import win32con
@@ -37,7 +35,11 @@ CAMINHO_ATLAS_EXE = os.path.join(
     "AtlasBrowser.exe",
 )
 CAMINHO_DOWNLOADS = os.path.join(pasta_usuario, "Downloads")
-ARQUIVO_CONFIG = "config_atlas_unified.json"
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ARQUIVO_CONFIG = os.path.join(_BASE_DIR, "config_atlas_unified.json")
 
 # --- PALETA DE CORES ---
 TEMA_DESCARGA = {"base": "#3B82F6", "hover": "#2563EB"}
@@ -114,10 +116,9 @@ class App(ctk.CTk):
         self._build_ui()
         self.atualizar_relogio()
         self.ao_mudar_modo(self.modo_var.get())
-        self._setup_tray()
         self._keepalive_stop = threading.Event()
         threading.Thread(target=self._keepalive_sap, daemon=True).start()
-        self.protocol("WM_DELETE_WINDOW", self._minimizar_para_tray)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.after(350, self.mostrar_aviso_resolucao)
 
     def abrir_configuracoes_tela(self):
@@ -760,15 +761,6 @@ class App(ctk.CTk):
                         sap_rodando = True
                     except Exception:
                         pass
-                    if not sap_rodando:
-                        try:
-                            if self.tray_icon:
-                                self.tray_icon.notify(
-                                    "SAP não detectado — abra o SAP GUI antes da próxima execução",
-                                    "Mosaic RDE RPA",
-                                )
-                        except Exception:
-                            pass
             except Exception:
                 pass
 
@@ -1118,8 +1110,10 @@ class App(ctk.CTk):
                     pyautogui.write(user_atual)
                     if not self.clicar_img("assets/senha.png", "Campo senha"):
                         return False
-                    pyautogui.write(pass_atual)
+                    pyautogui.write(pass_atual, interval=0.07)
+                    time.sleep(0.5)
                     pyautogui.press("enter")
+                    time.sleep(2)
                 else:
                     return False
 
@@ -1127,21 +1121,21 @@ class App(ctk.CTk):
                     return False
 
                 time.sleep(2)
-                if self.clicar_img(
+                if not self.clicar_img(
                     "assets/abrir_botaopg2.png", "Botão Seletor Interno", timeout=15
                 ):
-                    time.sleep(1)
-                    if unidade == "PGUA 1":
-                        pyautogui.press("down")
-                        time.sleep(0.5)
-                        pyautogui.press("enter")
-                    else:
-                        pyautogui.press("up")
-                        pyautogui.press("up")
-                        time.sleep(0.5)
-                        pyautogui.press("enter")
-                else:
                     return False
+                time.sleep(1)
+
+                # O seletor abre sempre com PGUA 2 destacado.
+                # PGUA 1 → seta para cima e Enter
+                # PGUA 2 → Enter direto
+                if unidade == "PGUA 1":
+                    pyautogui.press("up")
+                    time.sleep(0.3)
+                pyautogui.press("enter")
+                time.sleep(0.5)
+                self.adicionar_log(f"{unidade} selecionado!", "ok")
             else:
                 os.startfile(CAMINHO_ATLAS_EXE)
                 if not self.clicar_img(
@@ -1159,8 +1153,10 @@ class App(ctk.CTk):
                     pyautogui.write(user_atual)
                     if not self.clicar_img("assets/senha.png", "Senha"):
                         return False
-                    pyautogui.write(pass_atual)
+                    pyautogui.write(pass_atual, interval=0.07)
+                    time.sleep(0.5)
                     pyautogui.press("enter")
+                    time.sleep(2)
                 else:
                     return False
 
@@ -1239,7 +1235,7 @@ class App(ctk.CTk):
 
     def _selecionar_rota_ou_fluxo(self, unidade, modo_rota):
         """Seleciona Rota ou Fluxo com fallback para RECEPÇÃO em maiúscula"""
-        if unidade in ["UBERABA", "RONDONÓPOLIS"]:
+        if unidade in ["RONDONÓPOLIS"]:
             if self.clicar_img("assets/selectfluxo.png", "Fluxo"):
                 pyautogui.write(modo_rota)
                 pyautogui.press("down")
@@ -1302,6 +1298,34 @@ class App(ctk.CTk):
                 ):
                     return False
 
+                # --- UBERABA: segundo relatório via Fluxo (CARREGAMENTO) ---
+                if unidade == "UBERABA":
+                    if not self.clicar_img(
+                        "assets/fechar_descarga_ubr.png", "Fechar Descarga UBR"
+                    ):
+                        return False
+                    if not self.clicar_img("assets/impressao.png", "Impressão"):
+                        return False
+                    if not self.clicar_img("assets/relatorios.png", "Relatórios"):
+                        return False
+                    if not self.clicar_img(
+                        "assets/relatorios_ubr.png", "Relatórios UBR"
+                    ):
+                        return False
+                    if not self._preencher_data_inicial():
+                        return False
+                    if not self.clicar_img("assets/selectfluxo.png", "Fluxo"):
+                        return False
+                    pyautogui.write("CARREGAMENTO")
+                    pyautogui.press("down")
+                    time.sleep(0.5)
+                    if not self._finalizar_relatorio():
+                        return False
+                    if not self.mover_arquivo_atlas(
+                        unidade, hoje.strftime("%m.%Y"), False
+                    ):
+                        return False
+
             # --- BLOCO DE RECEPÇÃO ---
             elif is_recepcao:
                 if not self._abrir_menu_relatorios(unidade):
@@ -1317,7 +1341,10 @@ class App(ctk.CTk):
 
             # --- BLOCO DE CARREGAMENTO ---
             elif is_carregamento:
-                if unidade in ["UBERABA", "RONDONÓPOLIS"]:
+                # Uberaba: carregamento já é gerado no 2º passo da descarga
+                if unidade == "UBERABA":
+                    return True
+                if unidade in ["RONDONÓPOLIS"]:
                     pos_seta = pyautogui.locateCenterOnScreen(
                         "assets/seta_key.png", confidence=0.7
                     )
@@ -1353,6 +1380,12 @@ class App(ctk.CTk):
 
                 if not self.mover_arquivo_atlas(unidade, hoje.strftime("%m.%Y"), False):
                     return False
+
+                # Retorna Atlas ao estado base para que um eventual relatório de
+                # Recepção subsequente consiga abrir o menu Impressão → Relatórios
+                for _ in range(3):
+                    pyautogui.press("esc")
+                    time.sleep(0.4)
 
             return True
         except Exception as e:
@@ -1497,59 +1530,6 @@ class App(ctk.CTk):
         self.adicionar_log("Timeout: Excel não baixou.", "err")
         return False
 
-    # ==========================================
-    # BANDEJA DO SISTEMA (SYSTEM TRAY)
-    # ==========================================
-    def _criar_icone_tray(self):
-        size = 64
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle(
-            [0, 0, size - 1, size - 1], radius=14, fill=(59, 130, 246, 255)
-        )
-        w = (255, 255, 255, 255)
-        draw.rectangle([10, 12, 18, 52], fill=w)
-        draw.rectangle([46, 12, 54, 52], fill=w)
-        draw.polygon([(10, 12), (18, 12), (32, 33), (24, 33)], fill=w)
-        draw.polygon([(54, 12), (46, 12), (32, 33), (40, 33)], fill=w)
-        return img
-
-    def _setup_tray(self):
-        try:
-            icone = self._criar_icone_tray()
-            menu = pystray.Menu(
-                pystray.MenuItem("Abrir painel", self._tray_mostrar, default=True),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("▶ Executar Atlas agora", self._tray_run_atlas),
-                pystray.MenuItem("▶ Executar SAP agora", self._tray_run_sap),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Fechar", self._tray_sair),
-            )
-            self.tray_icon = pystray.Icon(
-                "MosaicRPA", icone, "Mosaic RDE RPA v2.1", menu
-            )
-            threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        except Exception:
-            self.tray_icon = None
-
-    def _minimizar_para_tray(self):
-        self.withdraw()
-
-    def _tray_mostrar(self, icon=None, item=None):
-        self.after(0, self.deiconify)
-        self.after(0, self.lift)
-        self.after(0, self.focus_force)
-
-    def _tray_run_atlas(self, icon=None, item=None):
-        self._tray_mostrar()
-
-        def _run():
-            self.auto_mode = "atlas"
-            self.auto_close = False
-            self._auto_iniciar()
-
-        self.after(600, _run)
-
     def _abrir_sap_pa1(self):
         """Abre o SAP Logon e conecta ao PA1: tenta via scripting API primeiro,
         depois via GUI (clicar no filtro) como fallback."""
@@ -1649,31 +1629,6 @@ class App(ctk.CTk):
         pyautogui.press("down")
         time.sleep(0.3)
         pyautogui.press("enter")
-
-    def _tray_run_sap(self, icon=None, item=None):
-        self._tray_mostrar()
-
-        def _run():
-            if not self.conectar_sap():
-                self._abrir_sap_pa1()
-                messagebox.showinfo(
-                    "SAP Logon iniciado",
-                    "Faça login no SAP (PA1) e depois clique em Iniciar.",
-                )
-                return
-            self.auto_mode = "sap"
-            self.auto_close = False
-            self._auto_iniciar()
-
-        self.after(600, _run)
-
-    def _tray_sair(self, icon=None, item=None):
-        try:
-            if self.tray_icon:
-                self.tray_icon.stop()
-        except Exception:
-            pass
-        self.after(0, self.destroy)
 
     # ==========================================
     # GERENCIAMENTO DE EXECUÇÃO
@@ -1996,21 +1951,11 @@ class App(ctk.CTk):
         self.after(0, lambda: self.ent_pass.configure(state="normal"))
         self.after(
             0,
-            lambda: self.btn_iniciar.configure(
-                state="normal", text="▶   Iniciar Automação Global"
-            ),
+            lambda: self.btn_iniciar.configure(state="normal", text="▶  Iniciar"),
         )
 
         if total > 0:
             if self.auto_close:
-                try:
-                    if self.tray_icon:
-                        msg = "Concluído" if fal == 0 else f"{fal} falha(s)"
-                        self.tray_icon.notify(
-                            f"{msg} — {suc}/{total} tarefas OK", "Mosaic RDE RPA"
-                        )
-                except Exception:
-                    pass
                 self.after(5000, self.destroy)
             else:
                 self.after(0, lambda: self.mostrar_resumo(total, suc, fal, lista_fal))

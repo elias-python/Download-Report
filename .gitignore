@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .env
+dist/
+build/
+build_test/
+dist_test/
+logs/
+downloads/
+processados/
