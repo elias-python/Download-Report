@@ -2,4 +2,4 @@ customtkinter
 pyautogui
 pywin32
 pillow
-opencv-python
+opencv-python-headless
