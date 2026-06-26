@@ -2,7 +2,7 @@
 
 Desenvolvimento de uma solução completa de **hiperautomação (RPA)** voltada para eliminação de atividades manuais repetitivas, aumento da eficiência operacional e padronização no processo de coleta e gestão de relatórios logísticos.
 
-A solução automatiza o fluxo de ponta a ponta — desde a abertura do sistema Atlas Browser até o download, renomeação e organização dos arquivos —, garantindo rastreabilidade, integridade das informações e suporte à tomada de decisão.
+A solução automatiza o fluxo de ponta a ponta — desde a abertura do sistema corporativo de pesagem e movimentação de cargas até o download, renomeação e organização dos arquivos —, garantindo rastreabilidade, integridade das informações e suporte à tomada de decisão.
 
 ---
 
@@ -10,7 +10,7 @@ A solução automatiza o fluxo de ponta a ponta — desde a abertura do sistema 
 
 **🔸 Automação de Interface Gráfica (RPA)**
 
-- Controle autônomo do Atlas Browser via reconhecimento de imagem em tela
+- Controle autônomo do sistema corporativo de pesagem e movimentação de cargas via reconhecimento de imagem em tela
 - Login automático, seleção de unidade, navegação por menus e download de relatórios
 - Suporte a múltiplas unidades operacionais em sequência: PGUA 1, PGUA 2, Uberaba, Candeias, Catalão, Sorriso, Rondonópolis, Rio Verde, Rio Grande, Palmeirante
 - Tratamento de modais, pop-ups e estados inesperados da interface
@@ -82,7 +82,7 @@ Engenharia de Prompt (GitHub Copilot) • Git • PyInstaller onedir • JSON co
 Usuário clica em "Iniciar"
         │
         ▼
-RPA abre o Atlas Browser
+RPA abre o sistema de pesagem e movimentação de cargas
         │
         ▼
 Login automático + seleção de unidade
@@ -114,9 +114,4 @@ LOG indica conclusão
 - Configurações em arquivo JSON ignorado pelo `.gitignore`
 - Distribuição como `.exe` sem expor código-fonte
 
----
 
-### 📬 Contato
-
-**Elias Santana**
-elias.santana@mosaicco.com
