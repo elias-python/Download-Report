@@ -9,3 +9,8 @@ dist_test/
 logs/
 downloads/
 processados/
+Complete_Edition.py
+Simple_Edition.spec
+config_atlas.json
+config_atlas_recepcao.json
+config_atlas_unified.json
